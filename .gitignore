@@ -1,0 +1,45 @@
+# The toolchain is rebuilt by scripts/setup-tools.sh on every session start.
+# Nothing installed at runtime belongs in git.
+
+# Mendix build output
+*.mda
+*.mpk
+deployment/
+javasource/**/proxies/
+
+# Mendix project working state
+*.mpr.bak
+*.mpr-journal
+modelreflection/
+.mendix-cache/
+
+# Toolchain artifacts (installed to /opt, ~/.mxcli, /usr/local/bin — never here)
+/mxcli
+bin/
+*.jar
+mxcli-src/
+
+# Local runtime state
+*.log
+logs/
+.tmp/
+tmp/
+
+# Playwright / screenshots
+.playwright-cli/
+screenshots/
+test-results/
+
+# Node
+node_modules/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Claude Code local overrides (settings.json IS committed)
+.claude/settings.local.json
