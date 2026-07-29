@@ -222,6 +222,8 @@ create persistent entity TraceOps.Guardrail (
   RequirementCount: integer not null default 0,
   ViolationCount: integer not null default 0,
   EnforcedBy: enumeration(TraceOps.Enforcement) not null,
+  /** Caption of EnforcedBy — a bound enum renders its key, not its caption */
+  EnforcedLabel: string(20),
   SortIndex: integer not null default 0
 )
 index (SortIndex);

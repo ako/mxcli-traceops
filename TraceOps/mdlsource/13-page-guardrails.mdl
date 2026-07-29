@@ -62,7 +62,7 @@ create or replace page TraceOps.Guardrails (
                   DynamicClasses: 'if $currentObject/ViolationCount > 0 then ''tr-num--red'' else ''tr-num--dim'''
                 )
                 dynamictext gEnf (
-                  Content: '{1}', ContentParams: [{1} = EnforcedBy],
+                  Content: '{1}', ContentParams: [{1} = EnforcedLabel],
                   Class: 'tr-num tr-num--sm tr-right',
                   DynamicClasses: 'if $currentObject/EnforcedBy = TraceOps.Enforcement.cirule then ''tr-num--green'' else if $currentObject/EnforcedBy = TraceOps.Enforcement.blocked then ''tr-num--red'' else ''tr-num--amber'''
                 )

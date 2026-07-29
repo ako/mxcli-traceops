@@ -570,3 +570,51 @@ axis at x≈1280 in a 2560 viewport.
 **Workaround:** state the direction explicitly wherever a DataView is used as a
 horizontal bar (`flex-direction: row`). Measuring `getBoundingClientRect()` on
 the children is what identified it; `display` alone looked correct.
+
+---
+
+## 19. A DYNAMICTEXT bound to an enumeration renders the value *key*, not its caption
+
+**Severity:** cosmetic, but it silently ships the wrong text
+**Phase:** 2 (TraceOps app)
+
+The guardrails table's "Enforced by" column bound the enum attribute directly:
+
+```
+dynamictext gEnf (Content: '{1}', ContentParams: [{1} = EnforcedBy], ...)
+```
+
+The enumeration declares captions that differ from the value names, because the
+names cannot contain a space:
+
+```
+create enumeration TraceOps.Enforcement (
+  cirule 'CI rule',
+  review 'review',
+  perfgate 'perf gate',
+  blocked 'blocked'
+);
+```
+
+The rendered column showed `cirule` and `perfgate` — the value names — rather
+than `CI rule` and `perf gate`. Nothing warns: `mxcli check` and `mx check` both
+pass, and it only shows up by reading the running page.
+
+It went unnoticed longer than it should have because the other enums in this app
+happen to have captions identical to their names (`domain`, `analytics`,
+`proposed`, `accepted`), so those columns looked correct by coincidence.
+
+**Workaround:** carry a companion label attribute and bind that instead — the
+same approach already used for `Requirement.StatusLabel` and
+`AgentSession.StatusLabel`:
+
+```
+EnforcedBy: enumeration(TraceOps.Enforcement) not null,
+/** Caption of EnforcedBy — a bound enum renders its key, not its caption */
+EnforcedLabel: string(20),
+```
+
+**Rule of thumb:** whenever an enumeration's caption differs from its value
+name, do not bind the enum to a DYNAMICTEXT — bind a label attribute. Worth
+checking every enum-bound text widget in an app, since the failure is invisible
+for enums whose captions match their names.

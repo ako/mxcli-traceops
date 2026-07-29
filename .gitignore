@@ -32,9 +32,10 @@ logs/
 .tmp/
 tmp/
 
-# Playwright / screenshots
+# Playwright / screenshots — except the README's committed captures
 .playwright-cli/
 screenshots/
+!docs/screenshots/
 test-results/
 
 # Node
@@ -72,12 +73,7 @@ TraceOps/packages/
 TraceOps/project-settings.user.json
 TraceOps/.claude/settings.local.json
 
-# Throwaway browser-driver scripts used to inspect the running app
-TraceOps/shot.js
-TraceOps/shot2.js
-TraceOps/dom.js
-TraceOps/dom2.js
-TraceOps/dom3.js
-TraceOps/dom4.js
+# playwright-core is installed ad hoc for scripts/capture-screenshots.js
 TraceOps/package-lock.json
 TraceOps/package.json
+__pycache__/

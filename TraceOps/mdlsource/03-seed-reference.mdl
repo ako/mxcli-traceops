@@ -19,73 +19,73 @@ begin
   $g1 = create TraceOps.Guardrail (GuardrailId = 'ARC-1', Title = 'Explicit domain state machines',
     Rule = 'Every lifecycle entity declares states and legal transitions in one table; no ad-hoc status strings.',
     Category = TraceOps.GuardrailCategory.domain, RequirementCount = 41, ViolationCount = 0,
-    EnforcedBy = TraceOps.Enforcement.cirule, SortIndex = 1);
+    EnforcedBy = TraceOps.Enforcement.cirule, EnforcedLabel = 'CI rule', SortIndex = 1);
   commit $g1;
 
   $g2 = create TraceOps.Guardrail (GuardrailId = 'ARC-2', Title = 'Metrics computed server-side',
     Rule = 'Charts and KPIs never derive business figures in the browser.',
     Category = TraceOps.GuardrailCategory.analytics, RequirementCount = 36, ViolationCount = 2,
-    EnforcedBy = TraceOps.Enforcement.review, SortIndex = 2);
+    EnforcedBy = TraceOps.Enforcement.review, EnforcedLabel = 'review', SortIndex = 2);
   commit $g2;
 
   $g3 = create TraceOps.Guardrail (GuardrailId = 'ARC-3', Title = 'Idempotent integration boundaries',
     Rule = 'All inbound ERP/PLM messages are keyed and replay-safe.',
     Category = TraceOps.GuardrailCategory.integration, RequirementCount = 28, ViolationCount = 0,
-    EnforcedBy = TraceOps.Enforcement.cirule, SortIndex = 3);
+    EnforcedBy = TraceOps.Enforcement.cirule, EnforcedLabel = 'CI rule', SortIndex = 3);
   commit $g3;
 
   $g4 = create TraceOps.Guardrail (GuardrailId = 'ARC-4', Title = 'Plant is a hard isolation boundary',
     Rule = 'No query may cross plant scope without an explicit grant.',
     Category = TraceOps.GuardrailCategory.security, RequirementCount = 52, ViolationCount = 1,
-    EnforcedBy = TraceOps.Enforcement.cirule, SortIndex = 4);
+    EnforcedBy = TraceOps.Enforcement.cirule, EnforcedLabel = 'CI rule', SortIndex = 4);
   commit $g4;
 
   $g5 = create TraceOps.Guardrail (GuardrailId = 'ARC-5', Title = 'Sensitive data encrypted at rest and in transit',
     Rule = 'Includes edge and terminal-local storage.',
     Category = TraceOps.GuardrailCategory.security, RequirementCount = 47, ViolationCount = 3,
-    EnforcedBy = TraceOps.Enforcement.cirule, SortIndex = 5);
+    EnforcedBy = TraceOps.Enforcement.cirule, EnforcedLabel = 'CI rule', SortIndex = 5);
   commit $g5;
 
   $g6 = create TraceOps.Guardrail (GuardrailId = 'ARC-6', Title = 'Plant-level configuration over code branching',
     Rule = 'Behaviour differences between plants are configuration, never forks.',
     Category = TraceOps.GuardrailCategory.domain, RequirementCount = 33, ViolationCount = 1,
-    EnforcedBy = TraceOps.Enforcement.review, SortIndex = 6);
+    EnforcedBy = TraceOps.Enforcement.review, EnforcedLabel = 'review', SortIndex = 6);
   commit $g6;
 
   $g7 = create TraceOps.Guardrail (GuardrailId = 'ARC-7', Title = 'PLM is the master of part and BOM data',
     Rule = 'MES never authors part master records.',
     Category = TraceOps.GuardrailCategory.integration, RequirementCount = 19, ViolationCount = 0,
-    EnforcedBy = TraceOps.Enforcement.review, SortIndex = 7);
+    EnforcedBy = TraceOps.Enforcement.review, EnforcedLabel = 'review', SortIndex = 7);
   commit $g7;
 
   $g8 = create TraceOps.Guardrail (GuardrailId = 'ARC-8', Title = 'Event-driven over polling',
     Rule = 'Machine and live data flow over the event stream; polling requires an ADR.',
     Category = TraceOps.GuardrailCategory.platform, RequirementCount = 24, ViolationCount = 4,
-    EnforcedBy = TraceOps.Enforcement.cirule, SortIndex = 8);
+    EnforcedBy = TraceOps.Enforcement.cirule, EnforcedLabel = 'CI rule', SortIndex = 8);
   commit $g8;
 
   $g9 = create TraceOps.Guardrail (GuardrailId = 'ARC-9', Title = 'Everything auditable, append-only',
     Rule = 'State changes emit immutable audit events with actor, time and reason.',
     Category = TraceOps.GuardrailCategory.compliance, RequirementCount = 58, ViolationCount = 1,
-    EnforcedBy = TraceOps.Enforcement.cirule, SortIndex = 9);
+    EnforcedBy = TraceOps.Enforcement.cirule, EnforcedLabel = 'CI rule', SortIndex = 9);
   commit $g9;
 
   $g10 = create TraceOps.Guardrail (GuardrailId = 'ARC-10', Title = 'Stated performance budgets per surface',
     Rule = 'Every interactive surface carries a measurable budget and a test that enforces it.',
     Category = TraceOps.GuardrailCategory.platform, RequirementCount = 22, ViolationCount = 2,
-    EnforcedBy = TraceOps.Enforcement.perfgate, SortIndex = 10);
+    EnforcedBy = TraceOps.Enforcement.perfgate, EnforcedLabel = 'perf gate', SortIndex = 10);
   commit $g10;
 
   $g11 = create TraceOps.Guardrail (GuardrailId = 'ARC-11', Title = 'Designed for gloves and noise',
     Rule = 'Shop-floor surfaces meet the industrial interaction spec.',
     Category = TraceOps.GuardrailCategory.ux, RequirementCount = 15, ViolationCount = 0,
-    EnforcedBy = TraceOps.Enforcement.review, SortIndex = 11);
+    EnforcedBy = TraceOps.Enforcement.review, EnforcedLabel = 'review', SortIndex = 11);
   commit $g11;
 
   $g12 = create TraceOps.Guardrail (GuardrailId = 'ARC-12', Title = 'One canonical definition per metric',
     Rule = 'Semantic layer owns metric definitions; no local redefinition.',
     Category = TraceOps.GuardrailCategory.analytics, RequirementCount = 11, ViolationCount = 1,
-    EnforcedBy = TraceOps.Enforcement.blocked, SortIndex = 12);
+    EnforcedBy = TraceOps.Enforcement.blocked, EnforcedLabel = 'blocked', SortIndex = 12);
   commit $g12;
 
   return $Done;
