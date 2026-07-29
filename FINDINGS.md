@@ -247,3 +247,326 @@ Cloning into '/tmp/probe'... done.
 
 **Takeaway:** do not use a bare `curl` against a GitHub HTML URL to decide
 whether the network is usable. Test with the protocol you actually need.
+
+---
+
+## 9. `Content: ''` on a DYNAMICTEXT persists as `Content: '{1}'` — an orphaned placeholder
+
+**Severity:** blocker — 29 MxBuild errors from one idiom
+**Phase:** 2 (TraceOps app)
+**mxcli:** nightly-41-g0ed0359f
+
+The prototype has many purely decorative elements (status dots, flex spacers,
+progress-bar segments). Modelled as a styled `container` with an empty text
+child, mxcli rewrites the empty content into a one-placeholder template with no
+params:
+
+```
+$ grep -n "dynamictext x1" mdlsource/07-shell-snippets.mdl
+          dynamictext x1 (Content: '')
+
+$ ./mxcli -p TraceOps.mpr -c "DESCRIBE SNIPPET TraceOps.SNIPPET_Sidebar" | grep -A1 lgd1
+        container lgd1 (Class: 'tr-legend-dot tr-legend-dot--verified') {
+          dynamictext x1 (Content: '{1}')
+```
+
+`mxcli check` passes. MxBuild does not:
+
+```
+$ ~/.mxcli/mxbuild/11.12.1/modeler/mx check TraceOps.mpr
+[error] [CE0720] "Place holder index 1 is greater than 0, the number of parameter(s)." at Text 'x1'
+...
+The app contains: 29 errors.
+```
+
+**Workaround:** use a single space, `Content: ' '`, which round-trips verbatim.
+Note the empty container is not an option either — lint rule MPR006 flags empty
+containers as a runtime crash risk.
+
+---
+
+## 10. A `Content:` literal starting with `$` + digits is parsed as a variable reference
+
+**Severity:** blocker, and silent — `mxcli check` reports nothing
+**Phase:** 2 (TraceOps app)
+**mxcli:** nightly-41-g0ed0359f
+
+The sessions view has a "Spend today · $318" tile. Written as a plain literal,
+the `$318` is taken as a positional variable and persisted as an *unbound*
+content param:
+
+```
+$ grep -n "s4v" mdlsource/14-page-sessions.mdl
+            dynamictext s4v (Content: '$318', Class: 'tr-stat-value ...')
+
+$ ./mxcli -p TraceOps.mpr -c "DESCRIBE PAGE TraceOps.AgentSessions" | grep -A2 s4v
+            dynamictext s4v (
+              Content: '{1}',
+              ContentParams: [{1} = <unbound>],
+
+$ ~/.mxcli/mxbuild/11.12.1/modeler/mx check TraceOps.mpr
+[error] [CE0402] "No value specified." at Text 's4v'
+```
+
+`mxcli check --references` passes clean, so this only surfaces at MxBuild.
+
+**Workaround:** pass the value as a literal content param. Three forms were
+tested and all round-trip correctly; only a *leading* `$`+digits is affected:
+
+```
+dynamictext a (Content: '{1}318', ContentParams: [{1} = '$'])    -- ok
+dynamictext b (Content: 'x$318')                                 -- ok (not leading)
+dynamictext d (Content: '{1}', ContentParams: [{1} = '$318'])    -- ok — used
+```
+
+---
+
+## 11. MDL string literals cannot span lines
+
+**Severity:** design constraint, not a bug — but it shapes the domain model
+**Phase:** 2 (TraceOps app)
+
+The prototype renders agent session logs, test-run output and a diff snippet as
+pre-formatted multi-line blocks (`white-space: pre-wrap`). There is no way to
+write one:
+
+```
+$ ./mxcli check /tmp/ml.mdl
+  declare $S String = 'line one
+line two';
+  - line 6:5 missing END at 'two'
+```
+
+The checker's own hint confirms it is general to MDL, not just microflows:
+*"dynamicclasses: 'if $x then ''a'' else ''b''' (correct — one line)"*.
+
+**Workaround:** model multi-line text as ordered child rows and render with a
+ListView. TraceOps has a `CodeLine` entity (LineKind / Text / Tone / SortIndex)
+used for all three blocks. This turned out better than a wrapped string anyway —
+each line carries its own tone, so `✗` failures render red and `›` steps grey.
+
+---
+
+## 12. Reserved words silently blocked as *widget* names
+
+**Severity:** low friction, good error message
+**Phase:** 2 (TraceOps app)
+
+Four natural widget names were rejected by the parser: `body`, `content`, `as`
+and `search`.
+
+```
+$ ./mxcli check mdlsource/08-page-cockpit.mdl
+  - line 17:14 mismatched input 'body' expecting {IDENTIFIER, QUOTED_IDENTIFIER}
+  'Body' is a reserved keyword in MDL. Use a different name like:
+    - Body_  (add underscore suffix)
+```
+
+The diagnostic names the conflict and suggests fixes, which is genuinely good.
+Worth knowing up front, because `body`/`content` are the obvious names for an
+app-shell container. Renamed to `appBody` / `mainContent` / `asx` / `searchBox`.
+
+Separately, the enum value `new` is reserved and rejected at *check* time with
+the platform error code:
+
+```
+  ✗ enumeration value 'new' is a reserved word (CE7247) [MDL010]
+      at TraceOps.FileChange
+```
+
+---
+
+## 13. Layout classes never reach children — Mendix wrapper DOM
+
+**Severity:** none (platform behaviour), but it silently breaks every grid
+**Phase:** 2 (TraceOps app)
+
+A `Class:` on a DataView or ListView lands on the widget's *outer* element, and
+both widgets insert a wrapper before the children. So `display: grid` on the
+widget class has no effect on the rows — the first render had all six KPI tiles
+stacked vertically and the top bar centred instead of spread:
+
+```
+$ node dom.js
+self: <DIV class="mx-dataview mx-name-dvTop tr-topbar form-horizontal">
+  child: <DIV class="mx-dataview-content">
+    gchild: <DIV class="mx-name-brand tr-brand">
+
+self: <DIV class="mx-listview mx-name-lvKpi tr-kpi-grid tr-lv">
+  child: <UL class="">
+    gchild: <LI class="mx-name-index-0">
+```
+
+**Workaround (two different fixes, one per widget):**
+
+```scss
+// DataView — make the wrapper transparent so children join the parent's layout
+.tr-app .mx-dataview > .mx-dataview-content { display: contents; }
+
+// ListView — move the grid onto the `ul`, which is the real row container
+.tr-kpi-grid { display: block; }
+.tr-kpi-grid > ul { display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: 10px; }
+```
+
+`display: contents` is the cleaner half: one rule fixes every DataView-as-layout
+in the app. The ListView half cannot use it, because the `li` must stay the grid
+item.
+
+---
+
+## 14. A ListView row cannot read an ancestor DataView's object
+
+**Severity:** design constraint — forced a domain-model change
+**Phase:** 2 (TraceOps app)
+
+The prototype highlights the selected tree row. The natural expression compares
+the row to the shared selection state held on an ancestor DataView:
+
+```
+DynamicClasses: 'if $currentObject/ReqId = $Selected/SelectedReqId then ...'
+```
+
+Inside a ListView row, `$currentObject` is the row object and the ancestor
+DataView's object is not addressable by name, so there is nothing to compare
+against.
+
+**Workaround:** denormalise the selection onto the rows as an `IsSelected`
+boolean that the row can read directly:
+
+```
+DynamicClasses: 'if $currentObject/IsSelected then ''tr-tree-row--sel'' else '''''
+```
+
+The select microflow clears only the currently-flagged row rather than rewriting
+the table (`retrieve ... where [IsSelected = true]`). Applied to all three
+master/detail views (requirements, sessions, validation queue).
+
+---
+
+## 15. `mxcli check` is not a substitute for `mx check`
+
+**Severity:** process note — cost two debug cycles
+**Phase:** 2 (TraceOps app)
+
+Both findings #9 and #10 pass `mxcli check --references` cleanly and fail at
+MxBuild. The reference checker validates that named elements exist; it does not
+re-validate what the writer actually persisted.
+
+```
+$ ./mxcli check mdlsource/14-page-sessions.mdl -p TraceOps.mpr --references
+✓ Syntax OK (1 statements)
+✓ All references valid
+Check passed!
+
+$ ~/.mxcli/mxbuild/11.12.1/modeler/mx check TraceOps.mpr
+[error] [CE0402] "No value specified." at Text 's4v'
+```
+
+**Takeaway:** run `mx check` after every slice, not just `mxcli check` — and
+`describe page` is the fastest way to see what was *actually* written when a
+build error names a widget you believe is fine.
+
+---
+
+## 16. `alter entity` needs the `attribute` keyword; `DELETE_ME` is not a delete behavior
+
+**Severity:** trivial, recorded for the exact syntax
+**Phase:** 2 (TraceOps app)
+
+```
+$ ./mxcli exec alter.mdl -p TraceOps.mpr
+Parse error: line 1:40 no viable alternative at input 'addGuardrailRef'
+```
+
+The working form is `alter entity M.E add attribute Name: type;` (the bare
+`add Name: type` used by some ORMs is rejected). Multiple additions chain
+without commas and take one trailing semicolon.
+
+Association delete behavior accepts only
+`DELETE_AND_REFERENCES | DELETE_BUT_KEEP_REFERENCES | DELETE_IF_NO_REFERENCES | CASCADE | PREVENT`.
+For "delete the child when the parent goes", the value is `CASCADE`.
+
+---
+
+## 17. ListView `PageSize` cannot be set from MDL at all — hardcoded to 20
+
+**Severity:** functional limitation with no MDL workaround
+**Phase:** 2 (TraceOps app)
+**mxcli:** nightly-41-g0ed0359f
+
+The traceability tree shows 31 rows in its opening state. The rendered page stops
+at 20 and shows a "Load more" button.
+
+`PageSize` is documented for DATAGRID and is accepted by the parser on a
+LISTVIEW without any warning — but it is silently discarded:
+
+```
+$ grep -n "PageSize" mdlsource/10-page-traceability.mdl
+                PageSize: 200,
+
+$ ./mxcli -p TraceOps.mpr -c "DESCRIBE PAGE TraceOps.Traceability" | grep -A3 "listview lvTree"
+              listview lvTree (
+                DataSource: database from TraceOps.Requirement where IsVisible = true,
+                Class: 'tr-panel-body tr-fill tr-lv'
+              ) {
+```
+
+The builder hardcodes it and never reads the property:
+
+```go
+// mdl/executor/cmd_pages_builder_v3_widgets.go:232
+func (pb *pageBuilder) buildListViewV3(w *ast.WidgetV3) (*pages.ListView, error) {
+	lv := &pages.ListView{
+		...
+		PageSize: 20,
+	}
+```
+
+The SDK *does* expose a setter (`modelsdk/gen/pages/types.go:15319
+`func (o *ListView) SetPageSize(v int32)`), so only the MDL wiring is missing.
+
+`alter page` is not a way in either — it only reaches pluggable widgets:
+
+```
+$ ./mxcli exec ps.mdl -p TraceOps.mpr
+Error: failed to set: failed to set PageSize on lvTree:
+  property "PageSize" not found (widget has no pluggable Object)
+```
+
+A GALLERY (pluggable) *accepts* `alter page ... set pageSize = 200` without
+error, but the value does not round-trip through `describe`, so it was not
+trusted as a workaround. Gallery also drops `PageSize`/`DesktopColumns` when
+given inline on `create page`.
+
+**Status: unresolved.** The tree paginates at 20 with a working "Load more".
+Every other list in the app is under 20 rows, so this affects one view. Switching
+the tree to a DATAGRID would fix the paging but costs the pixel-exact row markup
+that the design needs (the migrate-design-prototype skill recommends ListView for
+exactly this reason).
+
+---
+
+## 18. Atlas styles `.mx-dataview` as a *column* flex container
+
+**Severity:** low, but it silently defeats a horizontal bar layout
+**Phase:** 2 (TraceOps app)
+
+Setting `display: flex` on a DataView's own class is not enough to get a row.
+Atlas already declares the DataView a flex container in column direction, and a
+class that only sets `display:flex` leaves that direction in place — so the top
+bar's children stacked vertically and each was centred by the `align-items:
+center` that was meant to centre them *vertically*:
+
+```
+$ node dom4.js
+topbar dir=column align=center
+statusbar dir=column
+```
+
+The children reported correct flex values and sizes, which made it look like a
+working row until their x-positions were measured — all three centred on the same
+axis at x≈1280 in a 2560 viewport.
+
+**Workaround:** state the direction explicitly wherever a DataView is used as a
+horizontal bar (`flex-direction: row`). Measuring `getBoundingClientRect()` on
+the children is what identified it; `display` alone looked correct.

@@ -1,0 +1,523 @@
+/**
+ * TraceOps — Requirements & Delivery Assurance
+ *
+ * Domain model for the TraceOps prototype: a requirements traceability and
+ * delivery-assurance cockpit that tracks intent → requirement → guardrail →
+ * artifact → test, plus the agent sessions that implement them.
+ *
+ * Authored entirely through mxcli/MDL. Re-appliable from scratch.
+ *
+ * @since 1.0.0
+ */
+create module TraceOps;
+
+-- MARK: Enumerations
+
+/**
+ * Lifecycle status of a requirement.
+ */
+create enumeration TraceOps.ReqStatus (
+  draft 'draft',
+  specified 'specified',
+  mapped 'mapped',
+  dev 'in session',
+  built 'built',
+  review 'in review',
+  verified 'verified',
+  blocked 'blocked'
+);
+
+/**
+ * Requirement classification in the tree (epic → capability → feature → requirement).
+ */
+create enumeration TraceOps.ReqKind (
+  epic 'EPIC',
+  cap 'CAP',
+  feat 'FEAT',
+  req 'REQ',
+  nfr 'NFR'
+);
+
+/**
+ * State of a Claude Code agent session.
+ */
+create enumeration TraceOps.SessionStatus (
+  running 'running',
+  queued 'queued',
+  failed 'failed',
+  review 'review',
+  merged 'merged'
+);
+
+/**
+ * Architecture guardrail category.
+ */
+create enumeration TraceOps.GuardrailCategory (
+  domain 'domain',
+  analytics 'analytics',
+  integration 'integration',
+  security 'security',
+  platform 'platform',
+  compliance 'compliance',
+  ux 'ux'
+);
+
+/**
+ * How a guardrail is enforced.
+ */
+create enumeration TraceOps.Enforcement (
+  cirule 'CI rule',
+  review 'review',
+  perfgate 'perf gate',
+  blocked 'blocked'
+);
+
+/**
+ * Severity of a risk or open question.
+ */
+create enumeration TraceOps.RiskSeverity (
+  high 'HIGH',
+  med 'MED',
+  open 'OPEN'
+);
+
+/**
+ * Delivery status of a release.
+ */
+create enumeration TraceOps.ReleaseStatus (
+  atrisk 'at risk',
+  ontrack 'on track',
+  planning 'planning',
+  intake 'intake'
+);
+
+/**
+ * Architecture decision record status.
+ */
+create enumeration TraceOps.AdrStatus (
+  proposed 'proposed',
+  accepted 'accepted',
+  superseded 'superseded'
+);
+
+/**
+ * Outcome marker used by validation criteria, guardrail checks and tests.
+ */
+create enumeration TraceOps.CheckResult (
+  pass 'pass',
+  fail 'fail',
+  partial 'partial'
+);
+
+/**
+ * Change type of a file touched by an agent session.
+ */
+create enumeration TraceOps.FileChange (
+  modified 'modified',
+  added 'new'
+);
+
+-- MARK: Requirement tree
+
+/**
+ * A requirement node in the traceability tree.
+ *
+ * The tree is self-referencing (epic → capability → feature → requirement) and is
+ * rendered as a flat, ordered ListView. Because a Mendix ListView cannot recurse,
+ * the tree is *flattened* at seed time: SortIndex fixes depth-first order, Depth
+ * drives indentation, and IsVisible is recomputed by the expand/collapse microflow.
+ *
+ * Roll* attributes hold values rolled up from descendants so a row can show its
+ * subtree totals without a per-row aggregate query.
+ *
+ * @since 1.0.0
+ */
+@position(100, 100)
+create persistent entity TraceOps.Requirement (
+  /** Business key shown in the UI, e.g. REQ-MES-1-3-2 */
+  ReqId: string(60) not null error 'Requirement id is required',
+  /** Short requirement statement */
+  Title: string(300) not null error 'Title is required',
+  /** Intent / acceptance narrative shown in the detail pane */
+  Description: string(2000),
+  Kind: enumeration(TraceOps.ReqKind) not null error 'Kind is required',
+  Status: enumeration(TraceOps.ReqStatus) not null error 'Status is required',
+  /** Requirement owner; 'Owner' itself is platform-reserved so this is OwnerName */
+  OwnerName: string(100),
+  ReleaseTag: string(20),
+  Revision: string(60),
+
+  /** Depth-first position in the flattened tree */
+  SortIndex: integer not null default 0,
+  /** 0 = epic root */
+  Depth: integer not null default 0,
+  HasChildren: boolean not null default false,
+  IsExpanded: boolean not null default false,
+  /** Recomputed by ACT_ApplyTreeState from expansion + active filters */
+  IsVisible: boolean not null default true,
+
+  /** Own (non-rolled) counters */
+  ArtifactCount: integer not null default 0,
+  TestsPassed: integer not null default 0,
+  TestsFailed: integer not null default 0,
+
+  /** Subtree rollups */
+  RollLeaves: integer not null default 0,
+  RollVerified: integer not null default 0,
+  RollBuilt: integer not null default 0,
+  RollDev: integer not null default 0,
+  RollMapped: integer not null default 0,
+  RollArtifacts: integer not null default 0,
+  RollTestsPassed: integer not null default 0,
+  RollTestsFailed: integer not null default 0,
+  RollViolations: integer not null default 0,
+  RollBlocked: integer not null default 0,
+
+  /** Pre-rendered cell text so rows need no expression logic */
+  CaretLabel: string(4),
+  KindLabel: string(10),
+  StatusLabel: string(20),
+  GuardrailCell: string(20),
+  ArtifactCell: string(20),
+  TestsCell: string(20),
+  SessionCell: string(20),
+
+  /** Coverage bar segments, quantised to 0..20 (5% steps) for the bucket-class idiom */
+  VerifiedBucket: integer not null default 0,
+  BuiltBucket: integer not null default 0,
+  DevBucket: integer not null default 0,
+  /** Exact verified share, for the sidebar's "Health by area" figure */
+  VerifiedPercent: integer not null default 0,
+
+  /** Gap flags used by the cockpit columns and the tree filters */
+  IsLeaf: boolean not null default false,
+  HasNoImplementation: boolean not null default false,
+  HasNoPassingTest: boolean not null default false,
+  HasViolation: boolean not null default false
+)
+index (SortIndex)
+index (ReqId);
+
+/**
+ * Parent link for the requirement tree. Self-references must use `owner default`.
+ */
+create association TraceOps.Requirement_Parent
+from TraceOps.Requirement to TraceOps.Requirement
+type reference
+owner default
+delete_behavior DELETE_BUT_KEEP_REFERENCES
+comment 'Parent node in the traceability tree';
+
+-- MARK: Guardrails and decisions
+
+/**
+ * An architecture guardrail (ARC-n) that requirements are mapped against.
+ */
+@position(500, 100)
+create persistent entity TraceOps.Guardrail (
+  GuardrailId: string(20) not null error 'Guardrail id is required',
+  Title: string(200) not null error 'Title is required',
+  Rule: string(500),
+  Category: enumeration(TraceOps.GuardrailCategory) not null,
+  RequirementCount: integer not null default 0,
+  ViolationCount: integer not null default 0,
+  EnforcedBy: enumeration(TraceOps.Enforcement) not null,
+  SortIndex: integer not null default 0
+)
+index (SortIndex);
+
+/**
+ * A requirement's mapping to a guardrail, and whether it currently violates it.
+ *
+ * The guardrail id and title are denormalised rather than associated: the only
+ * consumer is the per-requirement trace-lanes panel, which needs just those two
+ * fields, and seeding ~200 links via an association would cost a retrieve each.
+ */
+@position(300, 320)
+create persistent entity TraceOps.GuardrailLink (
+  GuardrailRef: string(20) not null error 'Guardrail reference is required',
+  GuardrailTitle: string(200),
+  IsViolation: boolean not null default false,
+  SortIndex: integer not null default 0
+);
+
+create association TraceOps.GuardrailLink_Requirement
+from TraceOps.GuardrailLink to TraceOps.Requirement
+type reference
+owner default
+delete_behavior CASCADE;
+
+/**
+ * Architecture decision record.
+ */
+@position(700, 320)
+create persistent entity TraceOps.Adr (
+  AdrId: string(20) not null,
+  Title: string(200) not null,
+  Status: enumeration(TraceOps.AdrStatus) not null,
+  Meta: string(200),
+  SortIndex: integer not null default 0
+)
+index (SortIndex);
+
+-- MARK: Agent sessions
+
+/**
+ * A Claude Code agent session implementing a requirement.
+ */
+@position(100, 560)
+create persistent entity TraceOps.AgentSession (
+  SessionId: string(20) not null error 'Session id is required',
+  Status: enumeration(TraceOps.SessionStatus) not null,
+  StatusLabel: string(20),
+  Task: string(300) not null,
+  RequirementRef: string(60),
+  FileCount: integer not null default 0,
+  TestsPassed: integer not null default 0,
+  TestsFailed: integer not null default 0,
+  Spend: string(20),
+  Elapsed: string(40),
+  Branch: string(120),
+  ModelName: string(60),
+  FileCell: string(20),
+  TestsCell: string(20),
+  SortIndex: integer not null default 0
+)
+index (SortIndex);
+
+/**
+ * A file touched by an agent session.
+ */
+@position(500, 560)
+create persistent entity TraceOps.SessionArtifact (
+  Path: string(200) not null,
+  DiffStat: string(40),
+  ChangeType: enumeration(TraceOps.FileChange) not null,
+  SortIndex: integer not null default 0
+);
+
+create association TraceOps.SessionArtifact_AgentSession
+from TraceOps.SessionArtifact to TraceOps.AgentSession
+type reference
+owner default
+delete_behavior CASCADE;
+
+/**
+ * Guardrails a session was briefed to respect.
+ */
+@position(700, 560)
+create persistent entity TraceOps.SessionGuardrail (
+  Label: string(200) not null,
+  IsAtRisk: boolean not null default false,
+  SortIndex: integer not null default 0
+);
+
+create association TraceOps.SessionGuardrail_AgentSession
+from TraceOps.SessionGuardrail to TraceOps.AgentSession
+type reference
+owner default
+delete_behavior CASCADE;
+
+-- MARK: Validation queue
+
+/**
+ * An item awaiting human validation of agent-produced evidence.
+ */
+@position(100, 800)
+create persistent entity TraceOps.ValidationItem (
+  RequirementRef: string(60) not null,
+  Title: string(300) not null,
+  Flag: string(40),
+  FlagIsGreen: boolean not null default false,
+  FlagIsFail: boolean not null default false,
+  Age: string(20),
+  Meta: string(200),
+  SessionRef: string(20),
+  Description: string(2000),
+  TestSummary: string(60),
+  SortIndex: integer not null default 0
+)
+index (SortIndex);
+
+/**
+ * One line of pre-formatted monospace text — an agent session log, a test-run log
+ * or a diff snippet.
+ *
+ * MDL string literals cannot span lines, so multi-line blocks are modelled as
+ * ordered child rows and rendered with a ListView instead of one wrapped string.
+ * LineKind discriminates the block a line belongs to; IsTail marks the last two
+ * session-log lines, which is all the cockpit mini-card shows.
+ */
+@position(700, 800)
+create persistent entity TraceOps.CodeLine (
+  /** 'sessionlog' | 'testlog' | 'diff' */
+  LineKind: string(20) not null,
+  Text: string(400) not null,
+  /** Theme tone for the line: 'ok' | 'fail' | 'step' | 'add' */
+  Tone: string(10),
+  IsTail: boolean not null default false,
+  SortIndex: integer not null default 0
+)
+index (LineKind);
+
+create association TraceOps.CodeLine_AgentSession
+from TraceOps.CodeLine to TraceOps.AgentSession
+type reference
+owner default
+delete_behavior CASCADE;
+
+create association TraceOps.CodeLine_ValidationItem
+from TraceOps.CodeLine to TraceOps.ValidationItem
+type reference
+owner default
+delete_behavior CASCADE;
+
+/**
+ * One acceptance criterion, guardrail check or test row under a validation item.
+ * A single entity carries all three lists, discriminated by RowKind.
+ */
+@position(500, 800)
+create persistent entity TraceOps.ValidationRow (
+  /** 'criterion' | 'guardrail' | 'test' | 'diff' */
+  RowKind: string(20) not null,
+  Result: enumeration(TraceOps.CheckResult) not null,
+  RefId: string(40),
+  Text: string(300) not null,
+  Tag: string(60),
+  SortIndex: integer not null default 0
+)
+index (RowKind);
+
+create association TraceOps.ValidationRow_ValidationItem
+from TraceOps.ValidationRow to TraceOps.ValidationItem
+type reference
+owner default
+delete_behavior CASCADE;
+
+-- MARK: Releases and baselines
+
+/**
+ * A release train and its delivery-assurance posture.
+ */
+@position(100, 1040)
+create persistent entity TraceOps.Release (
+  ReleaseId: string(20) not null,
+  Name: string(200) not null,
+  DateLabel: string(60),
+  Status: enumeration(TraceOps.ReleaseStatus) not null,
+  StatusLabel: string(20),
+  PercentLabel: string(10),
+  VerifiedBucket: integer not null default 0,
+  BuiltBucket: integer not null default 0,
+  DevBucket: integer not null default 0,
+  Blocker: string(300),
+  BlockerIsRed: boolean not null default false,
+  SortIndex: integer not null default 0
+)
+index (SortIndex);
+
+/**
+ * A single stat chip under a release card.
+ */
+@position(500, 1040)
+create persistent entity TraceOps.ReleaseStat (
+  StatKey: string(40) not null,
+  StatValue: string(20) not null,
+  /** Theme modifier class suffix, e.g. 'green' | 'blue' | 'amber' | 'red' | 'mute' */
+  Tone: string(20),
+  SortIndex: integer not null default 0
+);
+
+create association TraceOps.ReleaseStat_Release
+from TraceOps.ReleaseStat to TraceOps.Release
+type reference
+owner default
+delete_behavior CASCADE;
+
+/**
+ * A frozen requirement baseline.
+ */
+@position(700, 1040)
+create persistent entity TraceOps.Baseline (
+  Tag: string(20) not null,
+  DateLabel: string(20),
+  Note: string(300),
+  Delta: string(60),
+  State: string(20),
+  IsCurrent: boolean not null default false,
+  SortIndex: integer not null default 0
+)
+index (SortIndex);
+
+-- MARK: Cockpit content
+
+/**
+ * A KPI tile on the cockpit.
+ */
+@position(100, 1280)
+create persistent entity TraceOps.Kpi (
+  Label: string(60) not null,
+  Value: string(20) not null,
+  Sub: string(120),
+  Delta: string(20),
+  DeltaIsRed: boolean not null default false,
+  /** Theme tone modifier: 'ink' | 'violet' | 'blue' | 'green' | 'red' | 'amber' */
+  Tone: string(20),
+  BarBucket: integer not null default 0,
+  SortIndex: integer not null default 0
+)
+index (SortIndex);
+
+/**
+ * A risk or open question.
+ */
+@position(400, 1280)
+create persistent entity TraceOps.Risk (
+  Severity: enumeration(TraceOps.RiskSeverity) not null,
+  SeverityLabel: string(10),
+  Title: string(300) not null,
+  Meta: string(200),
+  SortIndex: integer not null default 0
+)
+index (SortIndex);
+
+/**
+ * A requirement change-log entry.
+ */
+@position(700, 1280)
+create persistent entity TraceOps.ChangeEntry (
+  TimeLabel: string(10) not null,
+  RequirementRef: string(60),
+  Text: string(300) not null,
+  Who: string(100),
+  Rev: string(20),
+  SortIndex: integer not null default 0
+)
+index (SortIndex);
+
+-- MARK: Application state
+
+/**
+ * Singleton holding the view state the mockup keeps in component state:
+ * current selection in each view, tree layout, and the active tree filters.
+ *
+ * Non-persistent so each user session gets its own; it is created on demand by
+ * ACT_GetAppState.
+ */
+@position(400, 1520)
+create persistent entity TraceOps.AppState (
+  SelectedReqId: string(60),
+  SelectedSessionId: string(20),
+  SelectedValidationRef: string(60),
+  /** 'a' = inline badge matrix, 'b' = tree + trace lanes */
+  TreeLayout: string(2) not null default 'a',
+  FilterNoImpl: boolean not null default false,
+  FilterNoTest: boolean not null default false,
+  FilterViolations: boolean not null default false,
+  FilterMine: boolean not null default false,
+  /** Header counters, computed once at seed time */
+  LiveSessions: integer not null default 0,
+  AwaitingValidation: integer not null default 0,
+  GuardrailViolations: integer not null default 0,
+  VisibleRowCount: integer not null default 0
+);

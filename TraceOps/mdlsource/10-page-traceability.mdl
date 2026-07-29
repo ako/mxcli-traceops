@@ -1,0 +1,308 @@
+/**
+ * TraceOps — Traceability tree.
+ *
+ * The hero view: a flattened requirement tree rendered as a 9-column ListView
+ * grid, with the toolbar's layout toggle, filter chips and a detail pane.
+ *
+ * The tree is flat rather than nested because a Mendix ListView cannot recurse.
+ * Rows carry a precomputed SortIndex (depth-first) and Depth, and only rows with
+ * IsVisible = true are queried — ACT_ApplyTreeState recomputes that from the
+ * expansion state and the active filter chips.
+ */
+create or replace page TraceOps.Traceability (
+  Title: 'Traceability',
+  Layout: Atlas_Core.Atlas_TopBar,
+  url: 'traceability'
+)
+{
+  container app (Class: 'tr-app') {
+
+    snippetcall topBar (Snippet: TraceOps.SNIPPET_TopBar)
+
+    container appBody (Class: 'tr-body') {
+      snippetcall sideBar (Snippet: TraceOps.SNIPPET_Sidebar)
+
+      container mainContent (Class: 'tr-content') {
+
+        dataview dvState (DataSource: microflow TraceOps.DS_AppState, Class: 'tr-stack-sm') {
+
+          -- MARK: Toolbar
+          container toolbar (Class: 'tr-toolbar') {
+            dynamictext tbTitle (Content: 'Traceability tree', Class: 'tr-view-title')
+            dynamictext tbSub (Content: 'intent → requirement → principle → artifact → test', Class: 'tr-view-sub')
+            container tbSpacer (Class: 'tr-spacer') { dynamictext tbs (Content: ' ') }
+
+            container segmented (Class: 'tr-segmented') {
+              container segA (
+                OnClick: microflow TraceOps.ACT_LayoutA,
+                Class: 'tr-seg-btn',
+                DynamicClasses: 'if $currentObject/TreeLayout = ''a'' then ''tr-seg-btn--on'' else '''''
+              ) {
+                dynamictext segAt (Content: '1a · Inline badge matrix')
+              }
+              container segB (
+                OnClick: microflow TraceOps.ACT_LayoutB,
+                Class: 'tr-seg-btn',
+                DynamicClasses: 'if $currentObject/TreeLayout = ''b'' then ''tr-seg-btn--on'' else '''''
+              ) {
+                dynamictext segBt (Content: '1b · Tree + trace lanes')
+              }
+            }
+
+            container filtNoImpl (
+              OnClick: microflow TraceOps.ACT_FilterNoImpl,
+              Class: 'tr-filter',
+              DynamicClasses: 'if $currentObject/FilterNoImpl then ''tr-filter--on'' else '''''
+            ) {
+              container fniDot (Class: 'tr-dot tr-dot--red') { dynamictext fnid (Content: ' ') }
+              dynamictext fniLabel (Content: 'No implementation')
+              dynamictext fniCount (Content: '17', Class: 'tr-filter-count')
+            }
+            container filtNoTest (
+              OnClick: microflow TraceOps.ACT_FilterNoTest,
+              Class: 'tr-filter',
+              DynamicClasses: 'if $currentObject/FilterNoTest then ''tr-filter--on'' else '''''
+            ) {
+              container fntDot (Class: 'tr-dot tr-dot--amber') { dynamictext fntd (Content: ' ') }
+              dynamictext fntLabel (Content: 'No passing test')
+              dynamictext fntCount (Content: '14', Class: 'tr-filter-count')
+            }
+            container filtVio (
+              OnClick: microflow TraceOps.ACT_FilterViolations,
+              Class: 'tr-filter',
+              DynamicClasses: 'if $currentObject/FilterViolations then ''tr-filter--on'' else '''''
+            ) {
+              container fvDot (Class: 'tr-dot tr-dot--violet') { dynamictext fvd (Content: ' ') }
+              dynamictext fvLabel (Content: 'Violations')
+              dynamictext fvCount (Content: '5', Class: 'tr-filter-count')
+            }
+            container filtMine (
+              OnClick: microflow TraceOps.ACT_FilterMine,
+              Class: 'tr-filter',
+              DynamicClasses: 'if $currentObject/FilterMine then ''tr-filter--on'' else '''''
+            ) {
+              container fmDot (Class: 'tr-dot tr-dot--blue') { dynamictext fmd (Content: ' ') }
+              dynamictext fmLabel (Content: 'My requirements')
+              dynamictext fmCount (Content: '34', Class: 'tr-filter-count')
+            }
+
+            container searchBox (Class: 'tr-search') {
+              dynamictext searchIcon (Content: '⌕')
+              dynamictext searchTxt (Content: 'Filter by id, text, owner…')
+            }
+            container collapseBtn (OnClick: microflow TraceOps.ACT_CollapseAll, Class: 'tr-btn-ghost') {
+              dynamictext collapseTxt (Content: 'Collapse all')
+            }
+            container expandBtn (OnClick: microflow TraceOps.ACT_ExpandAll, Class: 'tr-btn-ghost') {
+              dynamictext expandTxt (Content: 'Expand all')
+            }
+            container newBtn (Class: 'tr-btn-primary') {
+              dynamictext newTxt (Content: '+ New requirement')
+            }
+          }
+
+          -- MARK: Tree + detail
+          container traceGrid (
+            Class: 'tr-sess-grid',
+            DynamicClasses: 'if $currentObject/TreeLayout = ''a'' then ''tr-cols-1'' else '''''
+          ) {
+
+            container treePanel (Class: 'tr-panel tr-fill') {
+              container treeHead (Class: 'tr-tree-head') {
+                dynamictext thReq (Content: 'Requirement')
+                dynamictext thStatus (Content: 'Status')
+                dynamictext thGuard (Content: 'Guardrails', Class: 'tr-num')
+                dynamictext thArt (Content: 'Artifacts', Class: 'tr-num')
+                dynamictext thTests (Content: 'Tests', Class: 'tr-num')
+                dynamictext thSess (Content: 'Session', Class: 'tr-num')
+                dynamictext thCov (Content: 'Coverage', Class: 'tr-cell-pad')
+                dynamictext thRel (Content: 'Release')
+                dynamictext thOwner (Content: 'Owner')
+              }
+              -- NOTE: this list shows 20 rows and then a "Load more" button. mxcli's
+              -- ListView builder hardcodes PageSize: 20 and reads no PageSize property
+              -- from MDL, and `alter page set PageSize` is rejected for non-pluggable
+              -- widgets — so there is currently no way to raise it from MDL. See
+              -- FINDINGS.md #17. No other list in the app exceeds 20 rows.
+              listview lvTree (
+                DataSource: database from TraceOps.Requirement where [IsVisible = true] sort by SortIndex asc,
+                Class: 'tr-panel-body tr-fill tr-lv'
+              ) {
+                container treeRow (
+                  OnClick: microflow TraceOps.ACT_SelectRequirement(Requirement: $currentObject),
+                  Class: 'tr-tree-row',
+                  DynamicClasses: 'if $currentObject/IsSelected then ''tr-tree-row--sel'' else if $currentObject/Depth = 0 then ''tr-tree-row--root'' else '''''
+                ) {
+                  container reqCell (
+                    Class: 'tr-reqcell',
+                    DynamicClasses: '''tr-d'' + toString($currentObject/Depth)'
+                  ) {
+                    container caretBtn (
+                      OnClick: microflow TraceOps.ACT_ToggleRequirement(Requirement: $currentObject),
+                      Class: 'tr-caret'
+                    ) {
+                      dynamictext caretTxt (Content: '{1}', ContentParams: [{1} = CaretLabel])
+                    }
+                    dynamictext rowId (Content: '{1}', ContentParams: [{1} = ReqId], Class: 'tr-reqid')
+                    dynamictext rowKind (
+                      Content: '{1}', ContentParams: [{1} = KindLabel],
+                      Class: 'tr-kind',
+                      DynamicClasses: '''tr-kind--'' + toString($currentObject/Kind)'
+                    )
+                    dynamictext rowTitle (
+                      Content: '{1}', ContentParams: [{1} = Title],
+                      Class: 'tr-reqtitle',
+                      DynamicClasses: 'if $currentObject/Depth < 2 then ''tr-reqtitle--strong'' else '''''
+                    )
+                  }
+                  dynamictext rowStatus (
+                    Content: '{1}', ContentParams: [{1} = StatusLabel],
+                    Class: 'tr-chip',
+                    DynamicClasses: '''tr-chip--'' + toString($currentObject/Status)'
+                  )
+                  dynamictext rowGuard (
+                    Content: '{1}', ContentParams: [{1} = GuardrailCell],
+                    Class: 'tr-num',
+                    DynamicClasses: 'if $currentObject/RollViolations > 0 then ''tr-num--red'' else if $currentObject/RollMapped = 0 then ''tr-num--dim'' else '''''
+                  )
+                  dynamictext rowArt (
+                    Content: '{1}', ContentParams: [{1} = ArtifactCell],
+                    Class: 'tr-num',
+                    DynamicClasses: 'if $currentObject/RollArtifacts = 0 then ''tr-num--red'' else '''''
+                  )
+                  dynamictext rowTests (
+                    Content: '{1}', ContentParams: [{1} = TestsCell],
+                    Class: 'tr-num',
+                    DynamicClasses: 'if $currentObject/RollTestsFailed > 0 then ''tr-num--red'' else if $currentObject/RollTestsPassed > 0 then ''tr-num--green'' else ''tr-num--dim'''
+                  )
+                  dynamictext rowSess (
+                    Content: '{1}', ContentParams: [{1} = SessionCell],
+                    Class: 'tr-num tr-num--sm',
+                    DynamicClasses: 'if $currentObject/Status = TraceOps.ReqStatus.dev then ''tr-num--amber'' else if $currentObject/Status = TraceOps.ReqStatus.blocked then ''tr-num--red'' else if $currentObject/Status = TraceOps.ReqStatus.review then ''tr-num--gold'' else ''tr-num--dim'''
+                  )
+                  container rowCov (Class: 'tr-cell-pad') {
+                    container rowBar (Class: 'tr-bar tr-bar--md') {
+                      container rbV (Class: 'tr-seg tr-seg--verified', DynamicClasses: '''tr-w-'' + toString($currentObject/VerifiedBucket)') { dynamictext rv (Content: ' ') }
+                      container rbB (Class: 'tr-seg tr-seg--built', DynamicClasses: '''tr-w-'' + toString($currentObject/BuiltBucket)') { dynamictext rb (Content: ' ') }
+                      container rbD (Class: 'tr-seg tr-seg--dev', DynamicClasses: '''tr-w-'' + toString($currentObject/DevBucket)') { dynamictext rd (Content: ' ') }
+                    }
+                  }
+                  dynamictext rowRel (Content: '{1}', ContentParams: [{1} = ReleaseTag], Class: 'tr-owner')
+                  dynamictext rowOwner (Content: '{1}', ContentParams: [{1} = OwnerName], Class: 'tr-owner')
+                }
+              }
+              container treeFoot (Class: 'tr-panel-cta') {
+                dynamictext treeFootTxt (
+                  Content: '{1} rows shown · 1 248 requirements in baseline',
+                  ContentParams: [{1} = VisibleRowCount]
+                )
+              }
+            }
+
+            -- MARK: Trace lanes (layout 1b)
+            container lanesCol (
+              Class: 'tr-stack-sm',
+              Visible: '$currentObject/TreeLayout = ''b'''
+            ) {
+              dataview dvSel (DataSource: microflow TraceOps.DS_SelectedRequirement, Class: 'tr-panel') {
+                container selHead (Class: 'tr-detail-head') {
+                  container selTop (Class: 'tr-row-flex') {
+                    dynamictext selId (Content: '{1}', ContentParams: [{1} = ReqId], Class: 'tr-reqid')
+                    dynamictext selKind (
+                      Content: '{1}', ContentParams: [{1} = KindLabel],
+                      Class: 'tr-kind',
+                      DynamicClasses: '''tr-kind--'' + toString($currentObject/Kind)'
+                    )
+                    dynamictext selStatus (
+                      Content: '{1}', ContentParams: [{1} = StatusLabel],
+                      Class: 'tr-chip',
+                      DynamicClasses: '''tr-chip--'' + toString($currentObject/Status)'
+                    )
+                  }
+                  dynamictext selTitle (Content: '{1}', ContentParams: [{1} = Title], Class: 'tr-detail-title tr-block')
+                  dynamictext selDesc (Content: '{1}', ContentParams: [{1} = Description], Class: 'tr-detail-desc tr-block')
+                  container selMeta (Class: 'tr-detail-meta') {
+                    dynamictext selOwner (Content: 'owner {1}', ContentParams: [{1} = OwnerName])
+                    dynamictext selRel (Content: 'release {1}', ContentParams: [{1} = ReleaseTag])
+                    dynamictext selLeaves (Content: '{1} leaf reqs', ContentParams: [{1} = RollLeaves])
+                    dynamictext selRev (Content: '{1}', ContentParams: [{1} = Revision])
+                  }
+                }
+              }
+
+              container lanesGuard (Class: 'tr-panel') {
+                container lgHead (Class: 'tr-panel-head') {
+                  dynamictext lgTitle (Content: 'Guardrails', Class: 'tr-panel-title')
+                }
+                listview lvLaneGuard (
+                  DataSource: microflow TraceOps.DS_SelectedGuardrailLinks,
+                  Class: 'tr-lv'
+                ) {
+                  container lgRow (Class: 'tr-check-row') {
+                    dynamictext lgIcon (
+                      Content: '●',
+                      Class: 'tr-check-icon',
+                      DynamicClasses: 'if $currentObject/IsViolation then ''tr-check-icon--fail'' else ''tr-check-icon--pass'''
+                    )
+                    dynamictext lgText (
+                      Content: '{1} · {2}',
+                      ContentParams: [{1} = GuardrailRef, {2} = GuardrailTitle],
+                      Class: 'tr-check-text'
+                    )
+                    dynamictext lgTag (
+                      Content: '{1}',
+                      ContentParams: [{1} = GuardrailRef],
+                      Class: 'tr-check-tag'
+                    )
+                  }
+                }
+              }
+
+              container lanesTests (Class: 'tr-panel') {
+                container ltHead (Class: 'tr-panel-head') {
+                  dynamictext ltTitle (Content: 'Evidence & sign-off', Class: 'tr-panel-title')
+                }
+                dataview dvSelEvidence (DataSource: microflow TraceOps.DS_SelectedRequirement) {
+                  container evRow1 (Class: 'tr-check-row') {
+                    dynamictext ev1i (
+                      Content: '●',
+                      Class: 'tr-check-icon',
+                      DynamicClasses: 'if $currentObject/RollTestsFailed > 0 then ''tr-check-icon--fail'' else ''tr-check-icon--pass'''
+                    )
+                    dynamictext ev1t (Content: 'RUN-2291 · pytest suite · 2 026 tests · 4m12s', Class: 'tr-check-text')
+                    dynamictext ev1g (Content: '{1}', ContentParams: [{1} = TestsCell], Class: 'tr-check-tag')
+                  }
+                  container evRow2 (Class: 'tr-check-row') {
+                    dynamictext ev2i (Content: '●', Class: 'tr-check-icon tr-check-icon--pass')
+                    dynamictext ev2t (Content: 'COV-2291 · branch coverage on changed lines', Class: 'tr-check-text')
+                    dynamictext ev2g (Content: '94%', Class: 'tr-check-tag')
+                  }
+                  container evRow3 (Class: 'tr-check-row') {
+                    dynamictext ev3i (Content: '●', Class: 'tr-check-icon tr-check-icon--partial')
+                    dynamictext ev3t (Content: 'ADR-011 · Offline-first terminal buffering', Class: 'tr-check-text')
+                    dynamictext ev3g (Content: 'accepted', Class: 'tr-check-tag')
+                  }
+                  container evRow4 (Class: 'tr-check-row') {
+                    dynamictext ev4i (
+                      Content: '●',
+                      Class: 'tr-check-icon',
+                      DynamicClasses: 'if $currentObject/RollTestsFailed > 0 then ''tr-check-icon--fail'' else ''tr-check-icon--partial'''
+                    )
+                    dynamictext ev4t (Content: 'Sign-off', Class: 'tr-check-text')
+                    dynamictext ev4g (
+                      Content: '{1}',
+                      ContentParams: [{1} = SessionCell],
+                      Class: 'tr-check-tag'
+                    )
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    snippetcall statusBar (Snippet: TraceOps.SNIPPET_StatusBar)
+  }
+}

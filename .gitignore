@@ -3,8 +3,15 @@
 
 # Mendix build output
 *.mda
-*.mpk
 deployment/
+
+# Marketplace module packages, EXCEPT the app's widget dependencies.
+# TraceOps/widgets/*.mpk are required to build: without them mxbuild fails with
+# CE0462 "Could not find widget 'Image' in the 'widgets' directory" (verified by
+# building with the directory moved aside). They are project dependencies, not
+# toolchain binaries, so they are committed.
+*.mpk
+!TraceOps/widgets/*.mpk
 javasource/**/proxies/
 
 # Mendix project working state
@@ -43,3 +50,34 @@ Thumbs.db
 
 # Claude Code local overrides (settings.json IS committed)
 .claude/settings.local.json
+
+# --- Mendix app (TraceOps/) -------------------------------------------------
+# The .mpr + mprcontents/ ARE committed — they are the model. Everything below
+# is build output, downloaded content, or local run state.
+TraceOps/deployment/
+TraceOps/theme-cache/
+TraceOps/.mendix-cache/
+TraceOps/.mxcli/
+TraceOps/node_modules/
+TraceOps/**/node_modules/
+TraceOps/mxcli
+TraceOps/mxcli.exe
+TraceOps/*.mpr.bak
+TraceOps/*.mpr.lock
+TraceOps/mprcontents/mprjournal*
+TraceOps/javasource/*/proxies/
+TraceOps/javasource/system/
+TraceOps/releases/
+TraceOps/packages/
+TraceOps/project-settings.user.json
+TraceOps/.claude/settings.local.json
+
+# Throwaway browser-driver scripts used to inspect the running app
+TraceOps/shot.js
+TraceOps/shot2.js
+TraceOps/dom.js
+TraceOps/dom2.js
+TraceOps/dom3.js
+TraceOps/dom4.js
+TraceOps/package-lock.json
+TraceOps/package.json

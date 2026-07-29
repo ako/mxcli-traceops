@@ -1,0 +1,133 @@
+/**
+ * TraceOps — Guardrails.
+ *
+ * The 12 architecture principles with their mapping counts and enforcement, the
+ * current violations, and the architecture decision records that drive them.
+ */
+create or replace page TraceOps.Guardrails (
+  Title: 'Guardrails',
+  Layout: Atlas_Core.Atlas_TopBar,
+  url: 'guardrails'
+)
+{
+  container app (Class: 'tr-app') {
+
+    snippetcall topBar (Snippet: TraceOps.SNIPPET_TopBar)
+
+    container appBody (Class: 'tr-body') {
+      snippetcall sideBar (Snippet: TraceOps.SNIPPET_Sidebar)
+
+      container mainContent (Class: 'tr-content') {
+
+        container toolbar (Class: 'tr-toolbar') {
+          dynamictext tbTitle (Content: 'Architecture guardrails', Class: 'tr-view-title')
+          dynamictext tbSub (Content: 'principles every requirement is mapped against', Class: 'tr-view-sub')
+        }
+
+        container guardCols (Class: 'tr-cols-guard') {
+
+          container guardPanel (Class: 'tr-panel') {
+            container guardHeadBar (Class: 'tr-panel-head') {
+              dynamictext ghTitle (Content: 'Guardrails', Class: 'tr-panel-title')
+              dynamictext ghCount (Content: '12', Class: 'tr-panel-count')
+              container ghSpacer (Class: 'tr-spacer') { dynamictext ghs (Content: ' ') }
+              dynamictext ghHint (Content: 'frozen at baseline 4.2-B2', Class: 'tr-panel-hint')
+            }
+            container guardCols2 (Class: 'tr-guard-head') {
+              dynamictext ghId (Content: 'Id')
+              dynamictext ghName (Content: 'Principle')
+              dynamictext ghRule (Content: 'Rule')
+              dynamictext ghCat (Content: 'Category')
+              dynamictext ghReqs (Content: 'Reqs', Class: 'tr-right')
+              dynamictext ghVio (Content: 'Violations', Class: 'tr-right')
+              dynamictext ghEnf (Content: 'Enforced by', Class: 'tr-right')
+            }
+            listview lvGuard (
+              DataSource: database from TraceOps.Guardrail sort by SortIndex asc,
+              Class: 'tr-lv'
+            ) {
+              container guardRow (Class: 'tr-guard-row') {
+                dynamictext gId (Content: '{1}', ContentParams: [{1} = GuardrailId], Class: 'tr-guard-id')
+                dynamictext gTitle (Content: '{1}', ContentParams: [{1} = Title], Class: 'tr-guard-title')
+                dynamictext gRule (Content: '{1}', ContentParams: [{1} = Rule], Class: 'tr-guard-rule')
+                dynamictext gCat (
+                  Content: '{1}', ContentParams: [{1} = Category],
+                  Class: 'tr-cat',
+                  DynamicClasses: '''tr-cat--'' + toString($currentObject/Category)'
+                )
+                dynamictext gReqs (Content: '{1}', ContentParams: [{1} = RequirementCount], Class: 'tr-num tr-right')
+                dynamictext gVio (
+                  Content: '{1}', ContentParams: [{1} = ViolationCount],
+                  Class: 'tr-num tr-right',
+                  DynamicClasses: 'if $currentObject/ViolationCount > 0 then ''tr-num--red'' else ''tr-num--dim'''
+                )
+                dynamictext gEnf (
+                  Content: '{1}', ContentParams: [{1} = EnforcedBy],
+                  Class: 'tr-num tr-num--sm tr-right',
+                  DynamicClasses: 'if $currentObject/EnforcedBy = TraceOps.Enforcement.cirule then ''tr-num--green'' else if $currentObject/EnforcedBy = TraceOps.Enforcement.blocked then ''tr-num--red'' else ''tr-num--amber'''
+                )
+              }
+            }
+          }
+
+          container sideStack (Class: 'tr-stack') {
+
+            container vioPanel (Class: 'tr-panel') {
+              container vioHead (Class: 'tr-panel-head') {
+                dynamictext vhTitle (Content: 'Current violations', Class: 'tr-panel-title')
+                container vhSpacer (Class: 'tr-spacer') { dynamictext vhs (Content: ' ') }
+                dynamictext vhHint (Content: 'blocks validation', Class: 'tr-panel-hint')
+              }
+              listview lvVio (
+                DataSource: database from TraceOps.Requirement where [HasViolation = true] sort by SortIndex asc,
+                Class: 'tr-lv'
+              ) {
+                container vioRow (
+                  OnClick: microflow TraceOps.ACT_OpenRequirement(Requirement: $currentObject),
+                  Class: 'tr-risk-row'
+                ) {
+                  container vioTop (Class: 'tr-risk-top') {
+                    dynamictext vSev (Content: '{1}', ContentParams: [{1} = GuardrailCell], Class: 'tr-sev tr-sev--high')
+                    dynamictext vTitle (Content: '{1}', ContentParams: [{1} = Title], Class: 'tr-risk-title')
+                  }
+                  dynamictext vMeta (
+                    Content: '{1} · owner {2}',
+                    ContentParams: [{1} = ReqId, {2} = OwnerName],
+                    Class: 'tr-meta tr-block'
+                  )
+                }
+              }
+            }
+
+            container adrPanel (Class: 'tr-panel') {
+              container adrHead (Class: 'tr-panel-head') {
+                dynamictext ahTitle (Content: 'Architecture decisions', Class: 'tr-panel-title')
+                container ahSpacer (Class: 'tr-spacer') { dynamictext ahs (Content: ' ') }
+                dynamictext ahCount (Content: '11 accepted', Class: 'tr-panel-hint')
+              }
+              listview lvAdr (
+                DataSource: database from TraceOps.Adr sort by SortIndex asc,
+                Class: 'tr-lv'
+              ) {
+                container adrRow (Class: 'tr-adr-row') {
+                  container adrTop (Class: 'tr-adr-top') {
+                    dynamictext aId (Content: '{1}', ContentParams: [{1} = AdrId], Class: 'tr-adr-id')
+                    dynamictext aTitle (Content: '{1}', ContentParams: [{1} = Title], Class: 'tr-adr-title')
+                    dynamictext aStatus (
+                      Content: '{1}', ContentParams: [{1} = Status],
+                      Class: 'tr-chip',
+                      DynamicClasses: '''tr-chip--'' + toString($currentObject/Status)'
+                    )
+                  }
+                  dynamictext aMeta (Content: '{1}', ContentParams: [{1} = Meta], Class: 'tr-meta tr-block')
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    snippetcall statusBar (Snippet: TraceOps.SNIPPET_StatusBar)
+  }
+}

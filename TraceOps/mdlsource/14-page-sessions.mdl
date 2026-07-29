@@ -1,0 +1,185 @@
+/**
+ * TraceOps — Agent sessions console.
+ *
+ * Master/detail: the full session list on the left, and the selected session's
+ * guardrail briefing, touched files and streaming log on the right.
+ */
+create or replace page TraceOps.AgentSessions (
+  Title: 'Agent sessions',
+  Layout: Atlas_Core.Atlas_TopBar,
+  url: 'sessions'
+)
+{
+  container app (Class: 'tr-app') {
+
+    snippetcall topBar (Snippet: TraceOps.SNIPPET_TopBar)
+
+    container appBody (Class: 'tr-body') {
+      snippetcall sideBar (Snippet: TraceOps.SNIPPET_Sidebar)
+
+      container mainContent (Class: 'tr-content') {
+
+        container toolbar (Class: 'tr-toolbar') {
+          dynamictext tbTitle (Content: 'Claude Code sessions', Class: 'tr-view-title')
+          dynamictext tbSub (Content: 'agent runs implementing requirements against the guardrails', Class: 'tr-view-sub')
+        }
+
+        container statGrid (Class: 'tr-stat-grid') {
+          container stat1 (Class: 'tr-stat') {
+            dynamictext s1l (Content: 'Running', Class: 'tr-stat-label tr-block')
+            dynamictext s1v (Content: '2', Class: 'tr-stat-value tr-tone--green tr-block')
+          }
+          container stat2 (Class: 'tr-stat') {
+            dynamictext s2l (Content: 'Queued', Class: 'tr-stat-label tr-block')
+            dynamictext s2v (Content: '2', Class: 'tr-stat-value tr-tone--mute tr-block')
+          }
+          container stat3 (Class: 'tr-stat') {
+            dynamictext s3l (Content: 'Failed', Class: 'tr-stat-label tr-block')
+            dynamictext s3v (Content: '2', Class: 'tr-stat-value tr-tone--red tr-block')
+          }
+          container stat4 (Class: 'tr-stat') {
+            dynamictext s4l (Content: 'Spend today', Class: 'tr-stat-label tr-block')
+            -- A Content literal that starts with '$' followed by digits is parsed as a
+            -- positional variable reference and silently persisted unbound (CE0402),
+            -- so the currency value is passed as a literal content param instead.
+            dynamictext s4v (
+              Content: '{1}', ContentParams: [{1} = '$318'],
+              Class: 'tr-stat-value tr-tone--amber tr-block'
+            )
+          }
+        }
+
+        container sessGrid (Class: 'tr-sess-grid tr-fill') {
+
+          container sessPanel (Class: 'tr-panel tr-fill') {
+            container sessHeadBar (Class: 'tr-panel-head') {
+              dynamictext shTitle (Content: 'Sessions', Class: 'tr-panel-title')
+              dynamictext shCount (Content: '9', Class: 'tr-panel-count')
+              container shSpacer (Class: 'tr-spacer') { dynamictext shs (Content: ' ') }
+              dynamictext shHint (Content: 'today', Class: 'tr-panel-hint')
+            }
+            container sessCols (Class: 'tr-sess-head') {
+              dynamictext scId (Content: 'Session')
+              dynamictext scStatus (Content: 'Status')
+              dynamictext scTask (Content: 'Task')
+              dynamictext scReq (Content: 'Requirement')
+              dynamictext scFiles (Content: 'Files', Class: 'tr-right')
+              dynamictext scTests (Content: 'Tests', Class: 'tr-right')
+              dynamictext scSpend (Content: 'Spend', Class: 'tr-right')
+              dynamictext scElapsed (Content: 'Elapsed', Class: 'tr-right')
+            }
+            listview lvSessions (
+              DataSource: database from TraceOps.AgentSession sort by SortIndex asc,
+              Class: 'tr-panel-body tr-fill tr-lv'
+            ) {
+              container sessRow (
+                OnClick: microflow TraceOps.ACT_SelectSession(Session: $currentObject),
+                Class: 'tr-sess-row',
+                DynamicClasses: 'if $currentObject/IsSelected then ''tr-sess-row--sel'' else '''''
+              ) {
+                dynamictext srId (Content: '{1}', ContentParams: [{1} = SessionId], Class: 'tr-sess-id')
+                dynamictext srStatus (
+                  Content: '{1}', ContentParams: [{1} = StatusLabel],
+                  Class: 'tr-sstatus',
+                  DynamicClasses: '''tr-sstatus--'' + toString($currentObject/Status)'
+                )
+                dynamictext srTask (Content: '{1}', ContentParams: [{1} = Task], Class: 'tr-sess-task')
+                dynamictext srReq (Content: '{1}', ContentParams: [{1} = RequirementRef], Class: 'tr-sess-req')
+                dynamictext srFiles (Content: '{1}', ContentParams: [{1} = FileCell], Class: 'tr-num tr-right')
+                dynamictext srTests (
+                  Content: '{1}', ContentParams: [{1} = TestsCell],
+                  Class: 'tr-num tr-right',
+                  DynamicClasses: 'if $currentObject/TestsFailed > 0 then ''tr-num--red'' else if $currentObject/TestsPassed > 0 then ''tr-num--green'' else ''tr-num--dim'''
+                )
+                dynamictext srSpend (Content: '{1}', ContentParams: [{1} = Spend], Class: 'tr-num tr-right')
+                dynamictext srElapsed (Content: '{1}', ContentParams: [{1} = Elapsed], Class: 'tr-sess-elapsed tr-right')
+              }
+            }
+          }
+
+          container detailStack (Class: 'tr-stack-sm') {
+
+            dataview dvSess (DataSource: microflow TraceOps.DS_SelectedSession, Class: 'tr-panel') {
+              container dHead (Class: 'tr-detail-head') {
+                container dTop (Class: 'tr-row-flex') {
+                  dynamictext dId (Content: '{1}', ContentParams: [{1} = SessionId], Class: 'tr-sess-id')
+                  dynamictext dStatus (
+                    Content: '{1}', ContentParams: [{1} = StatusLabel],
+                    Class: 'tr-sstatus',
+                    DynamicClasses: '''tr-sstatus--'' + toString($currentObject/Status)'
+                  )
+                  dynamictext dReq (Content: '{1}', ContentParams: [{1} = RequirementRef], Class: 'tr-sess-req')
+                }
+                dynamictext dTask (Content: '{1}', ContentParams: [{1} = Task], Class: 'tr-detail-title tr-block')
+                container dMeta (Class: 'tr-detail-meta') {
+                  dynamictext dBranch (Content: '{1}', ContentParams: [{1} = Branch])
+                  dynamictext dModel (Content: '{1}', ContentParams: [{1} = ModelName])
+                  dynamictext dFiles (Content: '{1} files', ContentParams: [{1} = FileCell])
+                  dynamictext dSpend (Content: '{1}', ContentParams: [{1} = Spend])
+                }
+              }
+            }
+
+            container guardPanel (Class: 'tr-panel') {
+              container gHead (Class: 'tr-panel-head') {
+                dynamictext gTitle (Content: 'Guardrail briefing', Class: 'tr-panel-title')
+              }
+              listview lvGuards (
+                DataSource: microflow TraceOps.DS_SelectedSessionGuardrails,
+                Class: 'tr-lv tr-guard-briefing'
+              ) {
+                dynamictext gPill (
+                  Content: '{1}', ContentParams: [{1} = Label],
+                  Class: 'tr-guard-pill',
+                  DynamicClasses: 'if $currentObject/IsAtRisk then ''tr-guard-pill--risk'' else '''''
+                )
+              }
+            }
+
+            container filesPanel (Class: 'tr-panel') {
+              container fHead (Class: 'tr-panel-head') {
+                dynamictext fTitle (Content: 'Touched files', Class: 'tr-panel-title')
+              }
+              listview lvFiles (
+                DataSource: microflow TraceOps.DS_SelectedSessionFiles,
+                Class: 'tr-lv'
+              ) {
+                container fileRow (Class: 'tr-file-row') {
+                  dynamictext fPath (Content: '{1}', ContentParams: [{1} = Path], Class: 'tr-file-path')
+                  dynamictext fDiff (
+                    Content: '{1}', ContentParams: [{1} = DiffStat],
+                    Class: 'tr-file-diff',
+                    DynamicClasses: 'if $currentObject/ChangeType = TraceOps.FileChange.added then ''tr-file-diff--new'' else '''''
+                  )
+                  dynamictext fSt (
+                    Content: '{1}', ContentParams: [{1} = ChangeType],
+                    Class: 'tr-file-st',
+                    DynamicClasses: 'if $currentObject/ChangeType = TraceOps.FileChange.added then ''tr-file-st--new'' else ''tr-file-st--modified'''
+                  )
+                }
+              }
+            }
+
+            container logPanel (Class: 'tr-panel') {
+              container lHead (Class: 'tr-panel-head') {
+                dynamictext lTitle (Content: 'Session log', Class: 'tr-panel-title')
+              }
+              listview lvLog (
+                DataSource: microflow TraceOps.DS_SelectedSessionLog,
+                Class: 'tr-log tr-log--tall tr-lv'
+              ) {
+                dynamictext logLine (
+                  Content: '{1}', ContentParams: [{1} = Text],
+                  Class: 'tr-log-line',
+                  DynamicClasses: '''tr-log-line--'' + $currentObject/Tone'
+                )
+              }
+            }
+          }
+        }
+      }
+    }
+
+    snippetcall statusBar (Snippet: TraceOps.SNIPPET_StatusBar)
+  }
+}

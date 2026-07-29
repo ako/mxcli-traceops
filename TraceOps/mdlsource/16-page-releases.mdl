@@ -1,0 +1,107 @@
+/**
+ * TraceOps — Releases.
+ *
+ * Release-train cards with their assurance posture and blockers, plus the
+ * baseline history below.
+ */
+create or replace page TraceOps.Releases (
+  Title: 'Releases',
+  Layout: Atlas_Core.Atlas_TopBar,
+  url: 'releases'
+)
+{
+  container app (Class: 'tr-app') {
+
+    snippetcall topBar (Snippet: TraceOps.SNIPPET_TopBar)
+
+    container appBody (Class: 'tr-body') {
+      snippetcall sideBar (Snippet: TraceOps.SNIPPET_Sidebar)
+
+      container mainContent (Class: 'tr-content') {
+
+        container toolbar (Class: 'tr-toolbar') {
+          dynamictext tbTitle (Content: 'Releases', Class: 'tr-view-title')
+          dynamictext tbSub (Content: 'delivery posture per release train', Class: 'tr-view-sub')
+        }
+
+        listview lvReleases (
+          DataSource: database from TraceOps.Release sort by SortIndex asc,
+          Class: 'tr-rel-grid tr-lv'
+        ) {
+          container relCard (
+            Class: 'tr-rel-card',
+            DynamicClasses: 'if $currentObject/Status = TraceOps.ReleaseStatus.atrisk then ''tr-rel-card--risk'' else '''''
+          ) {
+            container relHead (Class: 'tr-rel-head') {
+              dynamictext rId (Content: '{1}', ContentParams: [{1} = ReleaseId], Class: 'tr-rel-id')
+              dynamictext rStatus (
+                Content: '{1}', ContentParams: [{1} = StatusLabel],
+                Class: 'tr-chip',
+                DynamicClasses: 'if $currentObject/Status = TraceOps.ReleaseStatus.atrisk then ''tr-chip--review'' else if $currentObject/Status = TraceOps.ReleaseStatus.ontrack then ''tr-chip--verified'' else if $currentObject/Status = TraceOps.ReleaseStatus.planning then ''tr-chip--draft'' else ''tr-chip--specified'''
+              )
+              dynamictext rName (Content: '{1}', ContentParams: [{1} = Name], Class: 'tr-rel-name')
+              dynamictext rDate (Content: '{1}', ContentParams: [{1} = DateLabel], Class: 'tr-rel-date')
+            }
+            container relBody (Class: 'tr-rel-body') {
+              container relBarTop (Class: 'tr-row-flex') {
+                dynamictext rPct (
+                  Content: '{1} verified', ContentParams: [{1} = PercentLabel],
+                  Class: 'tr-rel-pct'
+                )
+              }
+              container relBar (Class: 'tr-bar tr-bar--lg') {
+                container rbV (Class: 'tr-seg tr-seg--verified', DynamicClasses: '''tr-w-'' + toString($currentObject/VerifiedBucket)') { dynamictext rv (Content: ' ') }
+                container rbB (Class: 'tr-seg tr-seg--built', DynamicClasses: '''tr-w-'' + toString($currentObject/BuiltBucket)') { dynamictext rb (Content: ' ') }
+                container rbD (Class: 'tr-seg tr-seg--dev', DynamicClasses: '''tr-w-'' + toString($currentObject/DevBucket)') { dynamictext rd (Content: ' ') }
+              }
+              listview lvRelStats (
+                DataSource: database from TraceOps.ReleaseStat where [TraceOps.ReleaseStat_Release = $currentObject] sort by SortIndex asc,
+                Class: 'tr-rel-stats tr-lv'
+              ) {
+                container statCell (Class: 'tr-block') {
+                  dynamictext scK (Content: '{1}', ContentParams: [{1} = StatKey], Class: 'tr-rel-stat-k tr-block')
+                  dynamictext scV (
+                    Content: '{1}', ContentParams: [{1} = StatValue],
+                    Class: 'tr-rel-stat-v tr-block',
+                    DynamicClasses: '''tr-tone--'' + $currentObject/Tone'
+                  )
+                }
+              }
+              dynamictext rBlocker (
+                Content: '{1}', ContentParams: [{1} = Blocker],
+                Class: 'tr-rel-blocker tr-block',
+                DynamicClasses: 'if $currentObject/BlockerIsRed then ''tr-rel-blocker--red'' else '''''
+              )
+            }
+          }
+        }
+
+        container basePanel (Class: 'tr-panel') {
+          container bHead (Class: 'tr-panel-head') {
+            dynamictext bTitle (Content: 'Baseline history', Class: 'tr-panel-title')
+            container bSpacer (Class: 'tr-spacer') { dynamictext bs (Content: ' ') }
+            dynamictext bHint (Content: 'frozen requirement sets', Class: 'tr-panel-hint')
+          }
+          listview lvBaselines (
+            DataSource: database from TraceOps.Baseline sort by SortIndex asc,
+            Class: 'tr-lv'
+          ) {
+            container baseRow (Class: 'tr-base-row') {
+              dynamictext bTag (Content: '{1}', ContentParams: [{1} = Tag], Class: 'tr-base-tag')
+              dynamictext bDate (Content: '{1}', ContentParams: [{1} = DateLabel], Class: 'tr-base-date')
+              dynamictext bNote (Content: '{1}', ContentParams: [{1} = Note], Class: 'tr-base-note')
+              dynamictext bDelta (Content: '{1}', ContentParams: [{1} = Delta], Class: 'tr-base-delta')
+              dynamictext bState (
+                Content: '{1}', ContentParams: [{1} = State],
+                Class: 'tr-chip',
+                DynamicClasses: 'if $currentObject/IsCurrent then ''tr-chip--verified'' else ''tr-chip--draft'''
+              )
+            }
+          }
+        }
+      }
+    }
+
+    snippetcall statusBar (Snippet: TraceOps.SNIPPET_StatusBar)
+  }
+}
