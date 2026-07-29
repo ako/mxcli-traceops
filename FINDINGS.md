@@ -618,3 +618,83 @@ EnforcedLabel: string(20),
 name, do not bind the enum to a DYNAMICTEXT — bind a label attribute. Worth
 checking every enum-bound text widget in an app, since the failure is invisible
 for enums whose captions match their names.
+
+---
+
+## 20. `commit` without `refresh` updates the database but never the ListView
+
+**Severity:** blocker — the tree's expand/collapse silently did nothing on screen
+**Phase:** 2 (TraceOps app)
+
+`ACT_ApplyTreeState` recomputes `IsVisible` for every requirement and committed
+each row inside the loop:
+
+```
+    commit $Row;
+  end loop;
+```
+
+That persists correctly, but never tells the client to re-query. The tree
+ListView kept rendering its previous rows while the footer count — read from the
+enclosing DataView, which *does* refresh when a widget microflow completes —
+updated. So the list and its own row count disagreed:
+
+```
+$ node scripts/smoke-tree.js
+initial              rendered= 9  footer="9 rows shown"     <- consistent
+after Collapse all   rendered= 9  footer="6 rows shown"     <- list never re-queried
+after Expand all     rendered= 9  footer="81 rows shown"    <- list never re-queried
+```
+
+Nothing catches this: `mxcli check` and `mx check` both pass, the microflow is
+correct, and the data in Postgres is right. Only clicking the UI reveals it — and
+a *static* screenshot of the initial page load looks perfect, because the first
+render is a fresh query.
+
+**Fix:** drop the per-row commit and commit the whole list once with a client
+refresh, which is both cheaper and the thing that actually triggers the re-query:
+
+```
+  end loop;
+
+  commit $All refresh;
+```
+
+After the fix, on the same script:
+
+```
+after Collapse all   rendered= 6  footer="6 rows shown"   roots: MES QMS PLM ANA PLT EDG
+after expanding MES  rendered= 9  footer="9 rows shown"
+after Expand all     rendered=20  footer="81 rows shown"  (20 = the PageSize cap, #17)
+```
+
+The same omission applied to `ACT_ToggleRequirement` and the three selection
+microflows; all now commit with `refresh`.
+
+**Takeaway — and the process failure worth naming:** screenshots verify
+*rendering*, not *behaviour*. Every view was screenshotted and looked right, and
+the bug still shipped, because no interaction was ever driven. Any state a
+microflow changes needs a click-through test; `scripts/smoke-tree.js` is that
+test for the tree.
+
+---
+
+## 21. `create microflow` is not idempotent — MDL sources must use `create or replace`
+
+**Severity:** low, but it breaks the "re-apply from scratch" workflow
+**Phase:** 2 (TraceOps app)
+
+Re-applying an edited `mdlsource/*.mdl` fails on every flow that already exists:
+
+```
+$ ./mxcli exec mdlsource/05-microflows.mdl -p TraceOps.mpr
+Error: microflow 'TraceOps.DS_AppState' already exists (use create or modify to overwrite)
+```
+
+Pages and snippets were already written as `create or replace`, but the
+microflow files were not, so only the pages could be re-applied. All 43
+microflow definitions are now `create or replace`.
+
+`alter entity … add attribute` has the same problem with no `or replace` form
+(`Error: attribute 'IsSelected' already exists`), so schema additions still have
+to be applied once, or the file split at its first microflow.

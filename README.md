@@ -156,12 +156,44 @@ exists and drives routing.
 
 ---
 
-## Known gap
+## Scope: this is a read-only reproduction of the design
 
-The traceability tree renders 20 rows and a **"Load more"** button rather than all
-31. mxcli's ListView builder hardcodes `PageSize: 20` and exposes no way to change
-it from MDL — see [FINDINGS.md](FINDINGS.md) #17 for the evidence. No other list
-in the app exceeds 20 rows.
+The prototype is a dashboard, and so is this — it faithfully reproduces the
+design's **look and its read/navigate behaviour**, not a full CRUD application.
+Concretely:
+
+| Works | Does not exist |
+| --- | --- |
+| Expand / collapse the tree, per row and via Collapse all / Expand all | Adding a requirement |
+| The four filter chips, and the 1a/1b layout toggle | Editing any field |
+| Selecting a requirement, session or queue item (drives the detail panes) | Deleting anything |
+| Navigating between the six views, and the cockpit drill-downs | Login / user roles (security is off) |
+
+There are **no input widgets, no create/edit/delete microflows and no edit pages**
+anywhere in the app. The `+ New requirement` button in the tree toolbar is
+deliberately inert — it reproduces the prototype's button, which is also a mockup.
+The only writes are the interaction microflows that move display state
+(expansion, filters, selection).
+
+Making it editable is a well-defined next step — an edit page per entity, create /
+save / delete microflows, and a real action on that button — but it is not what
+is here today.
+
+## Known gaps
+
+- **The tree paginates at 20 rows.** With everything expanded it reports 81 rows
+  but renders 20 plus a "Load more" button. mxcli's ListView builder hardcodes
+  `PageSize: 20` and exposes no way to change it from MDL — see
+  [FINDINGS.md](FINDINGS.md) #17. No other list in the app exceeds 20 rows.
+- **The tree is a flattened ListView, not the Mendix Tree Node widget.**
+  `com.mendix.widget.web.TreeNode` *is* available in `TraceOps/widgets/`, but the
+  design needs a nine-column grid row with chips, counters and a coverage bar,
+  which the outline widget's node template does not give the same control over.
+  Expansion is therefore modelled explicitly (`Depth`, `IsExpanded`, `IsVisible`,
+  recomputed by `ACT_ApplyTreeState`) rather than being the widget's own.
+- **Search is decorative.** The "Filter by id, text, owner…" box in the tree
+  toolbar is a styled container, matching the prototype; it has no input widget
+  behind it.
 
 ---
 

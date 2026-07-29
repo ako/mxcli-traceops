@@ -14,7 +14,7 @@
  * Used as the datasource of every page's outer DataView, so all views share one
  * selection/filter state exactly as the prototype's component state does.
  */
-create microflow TraceOps.DS_AppState ()
+create or replace microflow TraceOps.DS_AppState ()
 returns TraceOps.AppState as $State
 begin
   retrieve $Existing from TraceOps.AppState limit 1;
@@ -38,7 +38,7 @@ end;
  * expanded and — mirroring the prototype — when it either has children (parents
  * are never filtered away) or passes the active filter chips.
  */
-create microflow TraceOps.ACT_ApplyTreeState ()
+create or replace microflow TraceOps.ACT_ApplyTreeState ()
 returns Boolean as $Done
 begin
   declare $Done Boolean = true;
@@ -86,9 +86,13 @@ begin
     if $Row/IsVisible then
       set $Shown = $Shown + 1;
     end if;
-
-    commit $Row;
   end loop;
+
+  -- Commit the whole list once WITH a client refresh. A per-row `commit $Row`
+  -- persists the change but never tells the client to re-query, so the tree
+  -- ListView kept rendering its previous rows while the footer count (read from
+  -- the enclosing DataView) updated — the list and the count disagreed.
+  commit $All refresh;
 
   change $State (VisibleRowCount = $Shown);
   commit $State;
@@ -102,13 +106,13 @@ end;
 /**
  * Expands or collapses one requirement and reapplies visibility.
  */
-create microflow TraceOps.ACT_ToggleRequirement ($Requirement: TraceOps.Requirement)
+create or replace microflow TraceOps.ACT_ToggleRequirement ($Requirement: TraceOps.Requirement)
 returns Boolean as $Done
 begin
   declare $Done Boolean = true;
 
   change $Requirement (IsExpanded = not($Requirement/IsExpanded));
-  commit $Requirement;
+  commit $Requirement refresh;
 
   $Applied = call microflow TraceOps.ACT_ApplyTreeState ();
 
@@ -119,7 +123,7 @@ end;
 /**
  * Selects a requirement — drives the detail pane and the trace lanes.
  */
-create microflow TraceOps.ACT_SelectRequirement ($Requirement: TraceOps.Requirement)
+create or replace microflow TraceOps.ACT_SelectRequirement ($Requirement: TraceOps.Requirement)
 returns Boolean as $Done
 begin
   declare $Done Boolean = true;
@@ -135,7 +139,7 @@ end;
 /**
  * Collapses the whole tree.
  */
-create microflow TraceOps.ACT_CollapseAll ()
+create or replace microflow TraceOps.ACT_CollapseAll ()
 returns Boolean as $Done
 begin
   declare $Done Boolean = true;
@@ -144,8 +148,8 @@ begin
   loop $Row in $All
   begin
     change $Row (IsExpanded = false);
-    commit $Row;
   end loop;
+  commit $All refresh;
 
   $Applied = call microflow TraceOps.ACT_ApplyTreeState ();
 
@@ -156,7 +160,7 @@ end;
 /**
  * Expands every requirement that has children.
  */
-create microflow TraceOps.ACT_ExpandAll ()
+create or replace microflow TraceOps.ACT_ExpandAll ()
 returns Boolean as $Done
 begin
   declare $Done Boolean = true;
@@ -165,8 +169,8 @@ begin
   loop $Row in $All
   begin
     change $Row (IsExpanded = true);
-    commit $Row;
   end loop;
+  commit $All refresh;
 
   $Applied = call microflow TraceOps.ACT_ApplyTreeState ();
 
@@ -179,7 +183,7 @@ end;
 /**
  * Toggles the "No implementation" filter chip.
  */
-create microflow TraceOps.ACT_FilterNoImpl ()
+create or replace microflow TraceOps.ACT_FilterNoImpl ()
 returns Boolean as $Done
 begin
   declare $Done Boolean = true;
@@ -194,7 +198,7 @@ end;
 /**
  * Toggles the "No passing test" filter chip.
  */
-create microflow TraceOps.ACT_FilterNoTest ()
+create or replace microflow TraceOps.ACT_FilterNoTest ()
 returns Boolean as $Done
 begin
   declare $Done Boolean = true;
@@ -209,7 +213,7 @@ end;
 /**
  * Toggles the "Violations" filter chip.
  */
-create microflow TraceOps.ACT_FilterViolations ()
+create or replace microflow TraceOps.ACT_FilterViolations ()
 returns Boolean as $Done
 begin
   declare $Done Boolean = true;
@@ -224,7 +228,7 @@ end;
 /**
  * Toggles the "My requirements" filter chip.
  */
-create microflow TraceOps.ACT_FilterMine ()
+create or replace microflow TraceOps.ACT_FilterMine ()
 returns Boolean as $Done
 begin
   declare $Done Boolean = true;
@@ -239,7 +243,7 @@ end;
 /**
  * Switches the traceability tree to layout 1a (inline badge matrix).
  */
-create microflow TraceOps.ACT_LayoutA ()
+create or replace microflow TraceOps.ACT_LayoutA ()
 returns Boolean as $Done
 begin
   declare $Done Boolean = true;
@@ -253,7 +257,7 @@ end;
 /**
  * Switches the traceability tree to layout 1b (tree + trace lanes).
  */
-create microflow TraceOps.ACT_LayoutB ()
+create or replace microflow TraceOps.ACT_LayoutB ()
 returns Boolean as $Done
 begin
   declare $Done Boolean = true;
@@ -269,7 +273,7 @@ end;
 /**
  * Selects an agent session in the sessions console.
  */
-create microflow TraceOps.ACT_SelectSession ($Session: TraceOps.AgentSession)
+create or replace microflow TraceOps.ACT_SelectSession ($Session: TraceOps.AgentSession)
 returns Boolean as $Done
 begin
   declare $Done Boolean = true;
@@ -283,7 +287,7 @@ end;
 /**
  * Selects an item in the validation queue.
  */
-create microflow TraceOps.ACT_SelectValidation ($Item: TraceOps.ValidationItem)
+create or replace microflow TraceOps.ACT_SelectValidation ($Item: TraceOps.ValidationItem)
 returns Boolean as $Done
 begin
   declare $Done Boolean = true;
@@ -299,7 +303,7 @@ end;
 /**
  * The currently selected requirement, for the detail pane and trace lanes.
  */
-create microflow TraceOps.DS_SelectedRequirement ()
+create or replace microflow TraceOps.DS_SelectedRequirement ()
 returns TraceOps.Requirement as $Selected
 begin
   $State = call microflow TraceOps.DS_AppState ();
@@ -318,7 +322,7 @@ end;
 /**
  * The currently selected agent session.
  */
-create microflow TraceOps.DS_SelectedSession ()
+create or replace microflow TraceOps.DS_SelectedSession ()
 returns TraceOps.AgentSession as $Selected
 begin
   $State = call microflow TraceOps.DS_AppState ();
@@ -337,7 +341,7 @@ end;
 /**
  * The currently selected validation-queue item.
  */
-create microflow TraceOps.DS_SelectedValidation ()
+create or replace microflow TraceOps.DS_SelectedValidation ()
 returns TraceOps.ValidationItem as $Selected
 begin
   $State = call microflow TraceOps.DS_AppState ();
@@ -362,7 +366,7 @@ end;
  * already exists the flow returns immediately, which keeps a container restart
  * (or a hot model reload) from duplicating rows.
  */
-create microflow TraceOps.ACT_Startup ()
+create or replace microflow TraceOps.ACT_Startup ()
 returns Boolean as $Done
 begin
   declare $Done Boolean = true;

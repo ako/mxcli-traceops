@@ -32,11 +32,11 @@ begin
   loop $Row in $Previous
   begin
     change $Row (IsSelected = false);
-    commit $Row;
+    commit $Row refresh;
   end loop;
 
   change $Requirement (IsSelected = true);
-  commit $Requirement;
+  commit $Requirement refresh;
 
   $State = call microflow TraceOps.DS_AppState ();
   change $State (SelectedReqId = $Requirement/ReqId);
@@ -58,11 +58,11 @@ begin
   loop $Row in $Previous
   begin
     change $Row (IsSelected = false);
-    commit $Row;
+    commit $Row refresh;
   end loop;
 
   change $Session (IsSelected = true);
-  commit $Session;
+  commit $Session refresh;
 
   $State = call microflow TraceOps.DS_AppState ();
   change $State (SelectedSessionId = $Session/SessionId);
@@ -84,11 +84,11 @@ begin
   loop $Row in $Previous
   begin
     change $Row (IsSelected = false);
-    commit $Row;
+    commit $Row refresh;
   end loop;
 
   change $Item (IsSelected = true);
-  commit $Item;
+  commit $Item refresh;
 
   $State = call microflow TraceOps.DS_AppState ();
   change $State (SelectedValidationRef = $Item/RequirementRef);
@@ -102,7 +102,7 @@ end;
  * Applies the initial selection recorded by the seed, so the prototype's opening
  * state (MES-1-3 / CC-4471 / REQ-QMS-2-1-4) is reproduced on first load.
  */
-create microflow TraceOps.ACT_ApplyInitialSelection ()
+create or replace microflow TraceOps.ACT_ApplyInitialSelection ()
 returns Boolean as $Done
 begin
   declare $Done Boolean = true;

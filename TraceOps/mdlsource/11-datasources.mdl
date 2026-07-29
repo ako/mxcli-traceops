@@ -9,7 +9,7 @@
 /**
  * Guardrail links of the currently selected requirement, for the trace lanes.
  */
-create microflow TraceOps.DS_SelectedGuardrailLinks ()
+create or replace microflow TraceOps.DS_SelectedGuardrailLinks ()
 returns list of TraceOps.GuardrailLink as $Links
 begin
   $Requirement = call microflow TraceOps.DS_SelectedRequirement ();
@@ -25,7 +25,7 @@ end;
 /**
  * Log lines of the currently selected agent session.
  */
-create microflow TraceOps.DS_SelectedSessionLog ()
+create or replace microflow TraceOps.DS_SelectedSessionLog ()
 returns list of TraceOps.CodeLine as $Lines
 begin
   $Session = call microflow TraceOps.DS_SelectedSession ();
@@ -41,7 +41,7 @@ end;
 /**
  * Files touched by the currently selected agent session.
  */
-create microflow TraceOps.DS_SelectedSessionFiles ()
+create or replace microflow TraceOps.DS_SelectedSessionFiles ()
 returns list of TraceOps.SessionArtifact as $Files
 begin
   $Session = call microflow TraceOps.DS_SelectedSession ();
@@ -57,7 +57,7 @@ end;
 /**
  * Guardrails the currently selected agent session was briefed on.
  */
-create microflow TraceOps.DS_SelectedSessionGuardrails ()
+create or replace microflow TraceOps.DS_SelectedSessionGuardrails ()
 returns list of TraceOps.SessionGuardrail as $Guards
 begin
   $Session = call microflow TraceOps.DS_SelectedSession ();
@@ -73,7 +73,7 @@ end;
 /**
  * Acceptance criteria of the selected validation item.
  */
-create microflow TraceOps.DS_ValCriteria ()
+create or replace microflow TraceOps.DS_ValCriteria ()
 returns list of TraceOps.ValidationRow as $Rows
 begin
   $Item = call microflow TraceOps.DS_SelectedValidation ();
@@ -89,7 +89,7 @@ end;
 /**
  * Guardrail checks of the selected validation item.
  */
-create microflow TraceOps.DS_ValGuardrails ()
+create or replace microflow TraceOps.DS_ValGuardrails ()
 returns list of TraceOps.ValidationRow as $Rows
 begin
   $Item = call microflow TraceOps.DS_SelectedValidation ();
@@ -105,7 +105,7 @@ end;
 /**
  * Test results of the selected validation item.
  */
-create microflow TraceOps.DS_ValTests ()
+create or replace microflow TraceOps.DS_ValTests ()
 returns list of TraceOps.ValidationRow as $Rows
 begin
   $Item = call microflow TraceOps.DS_SelectedValidation ();
@@ -121,7 +121,7 @@ end;
 /**
  * Changed files of the selected validation item.
  */
-create microflow TraceOps.DS_ValDiff ()
+create or replace microflow TraceOps.DS_ValDiff ()
 returns list of TraceOps.ValidationRow as $Rows
 begin
   $Item = call microflow TraceOps.DS_SelectedValidation ();
@@ -137,7 +137,7 @@ end;
 /**
  * Test-run log lines of the selected validation item.
  */
-create microflow TraceOps.DS_ValTestLog ()
+create or replace microflow TraceOps.DS_ValTestLog ()
 returns list of TraceOps.CodeLine as $Lines
 begin
   $Item = call microflow TraceOps.DS_SelectedValidation ();
@@ -153,7 +153,7 @@ end;
 /**
  * Diff snippet lines of the selected validation item.
  */
-create microflow TraceOps.DS_ValDiffSnippet ()
+create or replace microflow TraceOps.DS_ValDiffSnippet ()
 returns list of TraceOps.CodeLine as $Lines
 begin
   $Item = call microflow TraceOps.DS_SelectedValidation ();

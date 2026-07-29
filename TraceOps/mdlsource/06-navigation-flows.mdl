@@ -13,7 +13,7 @@ alter entity TraceOps.AppState
 /**
  * Opens the cockpit.
  */
-create microflow TraceOps.ACT_GoCockpit ()
+create or replace microflow TraceOps.ACT_GoCockpit ()
 begin
   $State = call microflow TraceOps.DS_AppState ();
   change $State (CurrentView = 'cockpit');
@@ -25,7 +25,7 @@ end;
 /**
  * Opens the traceability tree.
  */
-create microflow TraceOps.ACT_GoTrace ()
+create or replace microflow TraceOps.ACT_GoTrace ()
 begin
   $State = call microflow TraceOps.DS_AppState ();
   change $State (CurrentView = 'trace');
@@ -37,7 +37,7 @@ end;
 /**
  * Opens the guardrails view.
  */
-create microflow TraceOps.ACT_GoGuardrails ()
+create or replace microflow TraceOps.ACT_GoGuardrails ()
 begin
   $State = call microflow TraceOps.DS_AppState ();
   change $State (CurrentView = 'arch');
@@ -49,7 +49,7 @@ end;
 /**
  * Opens the agent-sessions console.
  */
-create microflow TraceOps.ACT_GoSessions ()
+create or replace microflow TraceOps.ACT_GoSessions ()
 begin
   $State = call microflow TraceOps.DS_AppState ();
   change $State (CurrentView = 'sessions');
@@ -61,7 +61,7 @@ end;
 /**
  * Opens the validation queue.
  */
-create microflow TraceOps.ACT_GoValidation ()
+create or replace microflow TraceOps.ACT_GoValidation ()
 begin
   $State = call microflow TraceOps.DS_AppState ();
   change $State (CurrentView = 'validate');
@@ -73,7 +73,7 @@ end;
 /**
  * Opens the releases view.
  */
-create microflow TraceOps.ACT_GoReleases ()
+create or replace microflow TraceOps.ACT_GoReleases ()
 begin
   $State = call microflow TraceOps.DS_AppState ();
   change $State (CurrentView = 'releases');
@@ -86,7 +86,7 @@ end;
  * Opens the traceability tree with the "no implementation" filter applied —
  * the cockpit's "Open unimplemented filter" call to action.
  */
-create microflow TraceOps.ACT_GoTraceNoImpl ()
+create or replace microflow TraceOps.ACT_GoTraceNoImpl ()
 begin
   $State = call microflow TraceOps.DS_AppState ();
   change $State (CurrentView = 'trace', FilterNoImpl = true, FilterNoTest = false, FilterViolations = false);
@@ -99,7 +99,7 @@ end;
 /**
  * Opens the traceability tree filtered to requirements without a passing test.
  */
-create microflow TraceOps.ACT_GoTraceNoTest ()
+create or replace microflow TraceOps.ACT_GoTraceNoTest ()
 begin
   $State = call microflow TraceOps.DS_AppState ();
   change $State (CurrentView = 'trace', FilterNoTest = true, FilterNoImpl = false, FilterViolations = false);
@@ -112,7 +112,7 @@ end;
 /**
  * Opens the traceability tree filtered to guardrail violations.
  */
-create microflow TraceOps.ACT_GoTraceViolations ()
+create or replace microflow TraceOps.ACT_GoTraceViolations ()
 begin
   $State = call microflow TraceOps.DS_AppState ();
   change $State (CurrentView = 'trace', FilterViolations = true, FilterNoImpl = false, FilterNoTest = false);
@@ -125,7 +125,7 @@ end;
 /**
  * Selects a requirement from a cockpit gap column and jumps to the tree.
  */
-create microflow TraceOps.ACT_OpenRequirement ($Requirement: TraceOps.Requirement)
+create or replace microflow TraceOps.ACT_OpenRequirement ($Requirement: TraceOps.Requirement)
 begin
   $State = call microflow TraceOps.DS_AppState ();
   change $State (CurrentView = 'trace', SelectedReqId = $Requirement/ReqId);
@@ -137,7 +137,7 @@ end;
 /**
  * Opens an agent session from the cockpit mini-console.
  */
-create microflow TraceOps.ACT_OpenSession ($Session: TraceOps.AgentSession)
+create or replace microflow TraceOps.ACT_OpenSession ($Session: TraceOps.AgentSession)
 begin
   $State = call microflow TraceOps.DS_AppState ();
   change $State (CurrentView = 'sessions', SelectedSessionId = $Session/SessionId);
