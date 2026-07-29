@@ -698,3 +698,237 @@ microflow definitions are now `create or replace`.
 `alter entity … add attribute` has the same problem with no `or replace` form
 (`Error: attribute 'IsSelected' already exists`), so schema additions still have
 to be applied once, or the file split at its first microflow.
+
+---
+
+## 22. Mendix has no integer division, and no way to get an Integer back from one
+
+**Severity:** high — it blocks a whole class of arithmetic
+**Phase:** 3 (CRUD)
+
+The coverage bars are quantised to a 0–20 bucket, which is `value * 20 / leaves`.
+Assigning that to an Integer attribute fails:
+
+```
+$ ~/.mxcli/mxbuild/11.12.1/modeler/mx check TraceOps.mpr
+CE0117: Change 'Requirement': The value of type 'Decimal/Currency' cannot be
+        used for the member 'VerifiedBucket' of type 'Integer'.
+```
+
+`Integer / Integer` is a **Decimal** in Mendix, and there is no Decimal→Integer
+conversion function. Narrowing it down empirically, each as a single `change`
+against an Integer attribute:
+
+| Expression | Result |
+| --- | --- |
+| `20` | passes |
+| `$SomeInteger` | passes |
+| `$Req/RollVerified` | passes |
+| `$Req/RollVerified * 20` | passes |
+| `$Req/RollVerified * 20 / $Leaves` | **CE0117** |
+| `round($Req/RollVerified * 20 / $Leaves)` | **CE0117** |
+| `round($Req/RollVerified * 20 / $Leaves, 0)` | **CE0117** |
+| `floor(...)` / `trunc(...)` / `ceil(...)` | **CE0117** |
+
+So multiplication is closed over Integer but division is not, and every rounding
+function returns Decimal too — they round the *value*, not the *type*. There is no
+`toInteger()`; `toString()` + `parseInteger()` is not available in microflow
+expressions either.
+
+**Workaround —** do the division yourself, by repeated addition:
+
+```
+create or replace microflow TraceOps.ACT_IntDiv ($Numerator: Integer, $Denominator: Integer)
+returns Integer as $Result
+begin
+  declare $Result Integer = 0;
+  declare $Acc Integer = 0;
+  if $Denominator <= 0 then
+    return $Result;
+  end if;
+  set $Acc = $Denominator;
+  while $Acc <= $Numerator
+  begin
+    set $Result = $Result + 1;
+    set $Acc = $Acc + $Denominator;
+  end while;
+  return $Result;
+end;
+```
+
+That is floor division; for round-to-nearest, call it with `(2n + d)` over `2d`:
+
+```
+  $VerifiedB = call microflow TraceOps.ACT_IntDiv (
+    Numerator = $Requirement/RollVerified * 40 + $Leaves, Denominator = $Leaves * 2);
+```
+
+The loop is bounded by the quotient, which here is at most 100, so the cost is
+irrelevant — but it is a microflow call per division, and a real product doing
+this at scale would want a Java action instead.
+
+**Related trap:** `$X = call microflow …` *declares* `$X`. Writing the natural
+
+```
+  declare $VerifiedB Integer = 0;
+  $VerifiedB = call microflow TraceOps.ACT_IntDiv (...);
+```
+
+fails with `CE0111: The variable 'VerifiedB' already exists`. Drop the `declare`.
+
+---
+
+## 23. `combobox` cannot bind an association, only an attribute
+
+**Severity:** medium
+**Phase:** 3 (CRUD)
+
+The obvious way to let a user re-parent a requirement is a reference selector on
+`Requirement_Parent`. MDL's `combobox` will not do it:
+
+```
+combobox edParent (Label: 'Parent', Association: TraceOps.Requirement_Parent, ...)
+→ CE0642: Combo box 'edParent': An attribute must be selected.
+```
+
+`Attribute:` is mandatory, and it must be an attribute of the DataView entity —
+there is no `Association:`/`SelectableObjects:` form in the grammar, so the
+Atlas Combobox's association mode is unreachable from MDL. Same for
+`referenceselector`, which is not a recognised widget type at all.
+
+**Workaround —** carry the parent's business key in a plain attribute, and
+resolve it to the association in the save microflow:
+
+```
+alter entity TraceOps.Requirement add ParentReqId: String(60);
+...
+  retrieve $Parent from TraceOps.Requirement where [ReqId = $Requirement/ParentReqId] limit 1;
+  set $Requirement/TraceOps.Requirement_Parent = $Parent;
+```
+
+which turns out to be worth doing anyway: it is the natural place for the "no
+such id", "cannot be its own parent" and cycle checks that a reference selector
+would not have given.
+
+---
+
+## 24. Required-attribute validation fires on assignment, not on commit
+
+**Severity:** high — the symptom points at entirely the wrong place
+**Phase:** 3 (CRUD)
+
+`+ New requirement` produced a red error dialog instead of the editor:
+
+```
+Title has an issue: Title is required
+```
+
+The obvious reading is that something committed the half-built object, so the
+first fix attempt was to defer every commit in the create flow — which changed
+nothing. `mxcli`'s own output confirmed there was no commit to defer:
+
+```
+$ ./mxcli -p TraceOps.mpr -c "DESCRIBE MICROFLOW TraceOps.ACT_NewRequirement"
+  ... CreateObject  Commit: CommitTypeNo
+```
+
+The actual cause: `Title: String(300) not null error 'Title is required'` compiles
+to a *required* member, and Mendix raises that validation the moment an empty
+value is assigned — inside `create`, before any commit and before the page opens.
+An omitted attribute and an explicitly-empty one behave identically.
+
+**Fix —** give the draft a real placeholder value:
+
+```
+  $New = create TraceOps.Requirement (
+    ReqId = 'NEW-' + toString($Next),
+    Title = 'New requirement',      -- not '' — see above
+    ...
+  );
+```
+
+**Takeaway:** `not null` on an entity attribute is not a save-time constraint, so
+any "create blank, let the user fill it in" page needs placeholder values for
+every required attribute. Nothing in `mxcli check`, `mx check` or `lint` flags
+this; it only appears at runtime, as an error that names the commit path.
+
+---
+
+## 25. A Mendix pop-up page is `.mx-window`, and only its content div is "visible"
+
+**Severity:** low — test-harness sharp edge, not an mxcli bug
+**Phase:** 3 (CRUD)
+
+Worth recording because it cost a full debugging cycle. Driving the editor from
+Playwright against `.mx-dialog` timed out:
+
+```
+page.waitForSelector: Timeout 20000ms exceeded.
+  - waiting for locator('.mx-dialog') to be visible
+```
+
+`.mx-dialog` is the *error/confirmation* dialog. A pop-up **page** is
+`div.modal-dialog.mx-window`, and that element is `position: fixed` with no
+offsetParent, so Playwright's visibility check fails on it even when the pop-up is
+plainly on screen. The child `.modal-content.mx-window-content` is the one that
+tests visible.
+
+```js
+const DLG = '.mx-window-content';          // the pop-up page
+const isError = '.mx-dialog-error';        // a runtime error dialog
+```
+
+Fields inside it render as `.mx-name-<widgetName>.form-group`, each wrapping its
+own `<label>` and input, so targeting by widget name is stabler than by label
+text — and note the Atlas Combobox is a pluggable widget rendering an `<input>`,
+not a `<select>`, so `selectOption` does not work on it.
+
+---
+
+## 26. The denormalised-selection workaround bit back: delete took the selected row too
+
+**Severity:** high — silent data loss
+**Phase:** 3 (CRUD)
+
+Not an mxcli bug, but a direct consequence of the workaround in #14, and worth
+recording because the failure was invisible at the point of the mistake.
+
+MDL microflows cannot recurse, so deleting a subtree is a mark-then-sweep: flag
+the node, flag flagged nodes' children eight times, then delete flagged rows
+deepest-first. The flag needs a boolean on `Requirement` — and there was already
+one, `IsSelected`, added in #14 to denormalise the tree's row selection onto the
+rows themselves. Reusing it looked free.
+
+It is not. `IsSelected` is *true on whatever row the user has selected*, so the
+sweep deleted the requested subtree **and the selected requirement's subtree**.
+The traceability page selects a row by default, so this fired on the very first
+delete: `PLM` and its nine descendants disappeared while the test was deleting
+`REQ-SMOKE-1`.
+
+```
+$ sudo -u postgres psql -d traceops -c 'SELECT count(*) FROM "traceops$requirement";'
+ count
+-------
+    71        -- was 81
+```
+
+Every assertion in `smoke-crud.js` still passed. It checked that the new row was
+gone and that `MES`'s rollups came back to their original values, and both were
+true — the damage was to a *different* branch, which nothing looked at.
+
+**Fix —** a scratch attribute that exists for nothing else, plus a defensive clear
+of stale marks at the start:
+
+```
+alter entity TraceOps.Requirement add attribute IsMarked: boolean default false;
+```
+
+and the assertion that would have caught it, now in the test:
+
+```js
+check('delete removed nothing else', after.join(' ') === before.join(' '));
+```
+
+**Takeaway:** a denormalised flag is part of the UI's state, not scratch space.
+And #20's lesson generalises — it is not enough to assert that the thing you
+changed changed; assert that nothing else did.

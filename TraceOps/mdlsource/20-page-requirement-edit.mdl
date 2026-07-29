@@ -1,0 +1,102 @@
+/**
+ * TraceOps — requirement editor.
+ *
+ * A pop-up over the tree. Everything a user can legitimately author lives here;
+ * the derived columns (rollups, cells, coverage) are deliberately absent because
+ * ACT_RecomputeTree owns them.
+ */
+create or replace page TraceOps.Requirement_Edit (
+  params: { $Requirement: TraceOps.Requirement },
+  Title: 'Requirement',
+  Layout: Atlas_Core.PopupLayout,
+  PopupWidth: 760,
+  PopupHeight: 880,
+  PopupResizable: true
+)
+{
+  layoutgrid edGrid {
+    row edGridRow {
+      column edGridCol (DesktopWidth: AutoFill) {
+
+  dataview dvEdit (DataSource: $Requirement, Class: 'tr-edit') {
+
+    container edHead (Class: 'tr-edit-head') {
+      dynamictext edTitle (Content: 'Edit requirement', Class: 'tr-detail-title tr-block')
+      dynamictext edHint (
+        Content: 'Counts, coverage and tree position are derived — they refresh automatically when you save.',
+        Class: 'tr-detail-desc tr-block'
+      )
+    }
+
+    container edBody (Class: 'tr-edit-body') {
+
+      container edRow1 (Class: 'tr-edit-row') {
+        textbox edReqId (Label: 'Id', Attribute: ReqId, Class: 'tr-input')
+        combobox edKind (Label: 'Kind', Attribute: Kind, Class: 'tr-input')
+      }
+
+      textbox edTitleField (Label: 'Title', Attribute: Title, Class: 'tr-input')
+
+      textarea edDescription (Label: 'Intent / acceptance', Attribute: Description, Class: 'tr-input')
+
+      container edRow2 (Class: 'tr-edit-row') {
+        combobox edStatus (Label: 'Status', Attribute: Status, Class: 'tr-input')
+        textbox edParent (Label: 'Parent id — blank = top level', Attribute: ParentReqId, Class: 'tr-input')
+      }
+
+      container edRow3 (Class: 'tr-edit-row') {
+        textbox edOwner (Label: 'Owner', Attribute: OwnerName, Class: 'tr-input')
+        textbox edRelease (Label: 'Release', Attribute: ReleaseTag, Class: 'tr-input')
+        textbox edSortOrder (Label: 'Order', Attribute: SortOrder, Class: 'tr-input')
+      }
+
+      dynamictext edEvidenceLabel (Content: 'Evidence counters', Class: 'tr-edit-section tr-block')
+      container edRow4 (Class: 'tr-edit-row') {
+        textbox edArtifacts (Label: 'Artifacts', Attribute: ArtifactCount, Class: 'tr-input')
+        textbox edPassed (Label: 'Tests pass', Attribute: TestsPassed, Class: 'tr-input')
+        textbox edFailed (Label: 'Tests fail', Attribute: TestsFailed, Class: 'tr-input')
+      }
+
+      dynamictext edGuardLabel (Content: 'Guardrail mappings', Class: 'tr-edit-section tr-block')
+      listview lvEdGuards (
+        DataSource: database from TraceOps.GuardrailLink
+          where [TraceOps.GuardrailLink_Requirement = $Requirement] sort by SortIndex asc,
+        Class: 'tr-lv tr-edit-guards'
+      ) {
+        container edGuardRow (Class: 'tr-file-row') {
+          dynamictext edGuardRef (
+            Content: '{1} · {2}',
+            ContentParams: [{1} = GuardrailRef, {2} = GuardrailTitle],
+            Class: 'tr-file-path'
+          )
+          dynamictext edGuardState (
+            Content: '{1}',
+            ContentParams: [{1} = GuardrailRef],
+            Class: 'tr-file-st',
+            DynamicClasses: 'if $currentObject/IsViolation then ''tr-file-st--new'' else ''tr-file-st--modified'''
+          )
+        }
+      }
+    }
+
+    footer edFooter {
+      actionbutton edSave (
+        Caption: 'Save',
+        Action: microflow TraceOps.ACT_SaveRequirement(Requirement: $Requirement),
+        ButtonStyle: Primary
+      )
+      actionbutton edCancel (
+        Caption: 'Cancel',
+        Action: microflow TraceOps.ACT_CancelRequirement(Requirement: $Requirement)
+      )
+      actionbutton edDelete (
+        Caption: 'Delete',
+        Action: microflow TraceOps.ACT_DeleteFromEditor(Requirement: $Requirement),
+        ButtonStyle: Danger
+      )
+    }
+  }
+  }
+    }
+  }
+}

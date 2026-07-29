@@ -771,3 +771,92 @@ html, body, .mx-page, #content {
 
 // Layout 1a collapses the trace-lanes column, so the tree spans the full width.
 .tr-cols-1 { grid-template-columns: minmax(0, 1fr) !important; }
+
+// =============================================================================
+// Requirement editor + row actions
+// =============================================================================
+
+.tr-row-actions { display: flex; align-items: center; gap: 6px; overflow: hidden; }
+.tr-row-actions .tr-owner { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tr-row-act {
+  width: 16px; height: 16px; flex: 0 0 16px;
+  display: grid; place-items: center;
+  border-radius: 3px; cursor: pointer;
+  font-size: 11px; line-height: 1;
+  color: var(--tr-dim); border: 1px solid transparent;
+  &:hover { color: var(--tr-text-bright); background: #1d2836; border-color: var(--tr-border-chip); }
+}
+
+// The editor pop-up. Atlas owns the modal chrome; this is the dark skin for it.
+.tr-edit { background: var(--tr-panel-bg); color: var(--tr-text); }
+.tr-edit-head { padding: 12px 18px 9px; border-bottom: 1px solid var(--tr-border); }
+.tr-edit-body { padding: 12px 18px 16px; display: flex; flex-direction: column; gap: 10px; }
+.tr-edit-row { display: flex; gap: 12px; align-items: flex-start; > * { flex: 1; min-width: 0; } }
+.tr-edit-section {
+  font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--tr-dim); margin-top: 6px;
+}
+.tr-edit-guards { border: 1px solid var(--tr-border); border-radius: 5px; }
+
+// Atlas form controls, restyled for the dark surface.
+//
+// PopupLayout's DataView is `form-horizontal`, which splits every field into a
+// `col-sm-3` label gutter and a `col-sm-9` input. Inside a three-up .tr-edit-row
+// that gutter is ~54px, so a caption wraps to three lines and shoves its input
+// out of line with the rest of the row. Undo the grid and stack the label above
+// its input instead.
+.tr-edit .form-group { margin-bottom: 0; display: block; }
+// `max-width` is the one that actually binds — Atlas caps `.col-sm-3` at 25%, so
+// overriding `width` alone still leaves an 82px label that wraps mid-caption.
+.tr-edit .form-group > [class*='col-sm-'] {
+  float: none; width: 100%; max-width: none; padding-left: 0; padding-right: 0;
+}
+.tr-edit .control-label {
+  display: block; float: none; width: 100%; max-width: none; text-align: left;
+  padding-left: 0; padding-right: 0;
+  font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--tr-mute); font-weight: 500; padding-bottom: 4px;
+}
+.tr-edit .form-control,
+.tr-edit textarea,
+.tr-edit select {
+  background: var(--tr-inset-bg) !important;
+  border: 1px solid var(--tr-border-chip) !important;
+  color: var(--tr-text) !important;
+  border-radius: 5px; font-size: 12.5px; font-family: var(--tr-sans);
+  box-shadow: none !important;
+  &:focus { border-color: var(--tr-blue) !important; }
+  &::placeholder { color: var(--tr-faint); }
+}
+.tr-edit textarea { min-height: 68px; line-height: 1.5; }
+
+// Modal shell + footer buttons
+.mx-dialog, .modal-content, .mx-window {
+  background: var(--tr-panel-bg) !important;
+  border: 1px solid var(--tr-border) !important;
+  color: var(--tr-text);
+}
+.mx-dialog-header, .modal-header { background: var(--tr-panel-head-bg) !important; border-bottom: 1px solid var(--tr-border) !important; }
+.mx-dialog-header .mx-dialog-title, .modal-title { color: var(--tr-text-bright) !important; }
+// The window header carries only the close button — the editor titles itself —
+// so collapse the empty caption band Atlas would otherwise reserve.
+.mx-window-header {
+  padding: 4px 8px !important; min-height: 0 !important;
+  h4 { margin: 0 !important; line-height: 1 !important; }
+  .close { color: var(--tr-mute) !important; opacity: 1 !important; text-shadow: none; }
+}
+.mx-window-body { overflow-y: auto; }
+.tr-edit .mx-layoutgrid, .tr-edit .mx-layoutgrid-fluid { padding: 0 !important; }
+
+.tr-edit .mx-button, .tr-edit .btn {
+  border-radius: 5px; font-size: 12.5px; padding: 6px 14px; font-weight: 500;
+  border: 1px solid var(--tr-border-chip); background: transparent; color: var(--tr-text-4);
+  &:hover { background: var(--tr-hover-bg); color: var(--tr-text-bright); }
+}
+.tr-edit .btn-primary {
+  background: var(--tr-blue) !important; border-color: var(--tr-blue) !important; color: #fff !important;
+}
+.tr-edit .btn-danger {
+  background: transparent !important; border-color: #4a2226 !important; color: var(--tr-red) !important;
+}
+.tr-edit .mx-dataview-controls, .tr-edit .mx-listview-footer { padding: 12px 18px; border-top: 1px solid var(--tr-border); }

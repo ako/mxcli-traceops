@@ -96,7 +96,7 @@ create or replace page TraceOps.Traceability (
             container expandBtn (OnClick: microflow TraceOps.ACT_ExpandAll, Class: 'tr-btn-ghost') {
               dynamictext expandTxt (Content: 'Expand all')
             }
-            container newBtn (Class: 'tr-btn-primary') {
+            container newBtn (OnClick: microflow TraceOps.ACT_NewRequirement, Class: 'tr-btn-primary') {
               dynamictext newTxt (Content: '+ New requirement')
             }
           }
@@ -188,7 +188,21 @@ create or replace page TraceOps.Traceability (
                     }
                   }
                   dynamictext rowRel (Content: '{1}', ContentParams: [{1} = ReleaseTag], Class: 'tr-owner')
-                  dynamictext rowOwner (Content: '{1}', ContentParams: [{1} = OwnerName], Class: 'tr-owner')
+                  container rowActions (Class: 'tr-row-actions') {
+                    dynamictext rowOwner (Content: '{1}', ContentParams: [{1} = OwnerName], Class: 'tr-owner')
+                    container rowAdd (
+                      OnClick: microflow TraceOps.ACT_NewChildRequirement(Parent: $currentObject),
+                      Class: 'tr-row-act'
+                    ) {
+                      dynamictext rowAddTxt (Content: '+')
+                    }
+                    container rowEdit (
+                      OnClick: microflow TraceOps.ACT_EditRequirement(Requirement: $currentObject),
+                      Class: 'tr-row-act'
+                    ) {
+                      dynamictext rowEditTxt (Content: '✎')
+                    }
+                  }
                 }
               }
               container treeFoot (Class: 'tr-panel-cta') {

@@ -1,0 +1,275 @@
+/**
+ * TraceOps — requirement create / edit / delete.
+ *
+ * Every write funnels through ACT_RecomputeTree so the derived tree data
+ * (Depth, Path, SortIndex, rollups, cells, buckets, flags) can never drift from
+ * the underlying rows.
+ */
+
+-- MARK: Create
+
+/**
+ * Creates a blank requirement and opens the editor on it.
+ *
+ * The new node is parked at the end of the root level with a SortOrder past any
+ * existing one; picking a parent in the editor re-homes it, and the recompute on
+ * save fixes its Depth, Path and SortIndex. *
+ * The draft is given a real placeholder Title rather than ''. Title is `not null`
+ * on the entity, and Mendix raises its required-field validation as soon as an
+ * empty value is assigned to such an attribute — before any commit — which fails
+ * the action with "Title has an issue: Title is required" and shows an error
+ * dialog instead of the editor.
+ */
+create or replace microflow TraceOps.ACT_NewRequirement ()
+begin
+  declare $Next Integer = 0;
+
+  retrieve $All from TraceOps.Requirement;
+  loop $Row in $All
+  begin
+    if $Row/SortOrder >= $Next then
+      set $Next = $Row/SortOrder + 1;
+    end if;
+  end loop;
+
+  $New = create TraceOps.Requirement (
+    ReqId = 'NEW-' + toString($Next),
+    Title = 'New requirement',
+    Kind = TraceOps.ReqKind.req,
+    Status = TraceOps.ReqStatus.draft,
+    OwnerName = '—',
+    ReleaseTag = '4.2',
+    Revision = 'rev 1',
+    SortOrder = $Next,
+    Depth = 0,
+    IsVisible = true
+  );
+
+  -- Deliberately uncommitted: Save commits it, Cancel rolls it away, so a
+  -- half-created requirement never reaches the database or the tree.
+  show page TraceOps.Requirement_Edit ($Requirement = $New);
+end;
+/
+
+/**
+ * Creates a child of the given requirement and opens the editor on it. *
+ * The draft is given a real placeholder Title rather than ''. Title is `not null`
+ * on the entity, and Mendix raises its required-field validation as soon as an
+ * empty value is assigned to such an attribute — before any commit — which fails
+ * the action with "Title has an issue: Title is required" and shows an error
+ * dialog instead of the editor.
+ */
+create or replace microflow TraceOps.ACT_NewChildRequirement ($Parent: TraceOps.Requirement)
+begin
+  declare $Next Integer = 0;
+
+  retrieve $All from TraceOps.Requirement;
+  loop $Row in $All
+  begin
+    if $Row/SortOrder >= $Next then
+      set $Next = $Row/SortOrder + 1;
+    end if;
+  end loop;
+
+  $New = create TraceOps.Requirement (
+    ReqId = $Parent/ReqId + '-NEW',
+    Title = 'New requirement',
+    Kind = TraceOps.ReqKind.req,
+    Status = TraceOps.ReqStatus.draft,
+    OwnerName = $Parent/OwnerName,
+    ReleaseTag = $Parent/ReleaseTag,
+    Revision = 'rev 1',
+    SortOrder = $Next,
+    IsVisible = true
+  );
+  set $New/TraceOps.Requirement_Parent = $Parent;
+  set $New/ParentReqId = $Parent/ReqId;
+
+  -- Make sure the new child will be reachable rather than hidden under a closed
+  -- parent. The parent is an existing row, so committing it here is safe.
+  change $Parent (IsExpanded = true);
+  commit $Parent;
+
+  -- $New stays uncommitted until Save — see ACT_NewRequirement.
+  show page TraceOps.Requirement_Edit ($Requirement = $New);
+end;
+/
+
+-- MARK: Edit
+
+/**
+ * Opens the editor on an existing requirement.
+ */
+create or replace microflow TraceOps.ACT_EditRequirement ($Requirement: TraceOps.Requirement)
+begin
+  show page TraceOps.Requirement_Edit ($Requirement = $Requirement);
+end;
+/
+
+/**
+ * Validates and saves the edited requirement, then rebuilds the tree.
+ *
+ * Two rules are enforced here rather than by the domain model, because both need
+ * to look at other rows: the business key must stay unique, and a node may not
+ * be parented to itself or to one of its own descendants (which would detach a
+ * whole branch into an unreachable cycle).
+ */
+create or replace microflow TraceOps.ACT_SaveRequirement ($Requirement: TraceOps.Requirement)
+returns Boolean as $Saved
+begin
+  declare $Saved Boolean = true;
+
+  if trim($Requirement/ReqId) = '' then
+    validation feedback $Requirement/ReqId message 'An id is required.';
+    set $Saved = false;
+  end if;
+
+  if trim($Requirement/Title) = '' then
+    validation feedback $Requirement/Title message 'A title is required.';
+    set $Saved = false;
+  end if;
+
+  retrieve $Clashes from TraceOps.Requirement where [ReqId = $Requirement/ReqId];
+  loop $Clash in $Clashes
+  begin
+    if $Clash != $Requirement then
+      validation feedback $Requirement/ReqId message 'That id is already used by another requirement.';
+      set $Saved = false;
+    end if;
+  end loop;
+
+  -- Resolve the typed parent id onto the association. Blank makes this a root.
+  if trim($Requirement/ParentReqId) = '' then
+    set $Requirement/TraceOps.Requirement_Parent = empty;
+  else
+    retrieve $Parent from TraceOps.Requirement
+      where [ReqId = $Requirement/ParentReqId] limit 1;
+    if $Parent = empty then
+      validation feedback $Requirement/ParentReqId message 'No requirement has that id.';
+      set $Saved = false;
+    else
+      if $Parent = $Requirement then
+        validation feedback $Requirement/ParentReqId message 'A requirement cannot be its own parent.';
+        set $Saved = false;
+      else
+        -- Path is the ancestor chain, so a descendant's Path starts with this
+        -- node's. Cheaper and simpler than walking the chain up — and walking it
+        -- would re-retrieve into one variable, which Mendix rejects (CE0111).
+        if startsWith($Parent/Path, $Requirement/Path + '/') then
+          validation feedback $Requirement/ParentReqId message 'That would make the requirement a child of its own descendant.';
+          set $Saved = false;
+        else
+          set $Requirement/TraceOps.Requirement_Parent = $Parent;
+        end if;
+      end if;
+    end if;
+  end if;
+
+  if not($Saved) then
+    return $Saved;
+  end if;
+
+  commit $Requirement;
+
+  $Recomputed = call microflow TraceOps.ACT_RecomputeTree ();
+
+  close page;
+
+  return $Saved;
+end;
+/
+
+/**
+ * Abandons the edit.
+ *
+ * `rollback` is enough for both cases: on a newly created requirement (never
+ * committed) it discards the object entirely, and on an existing one it reverts
+ * the uncommitted field changes.
+ */
+create or replace microflow TraceOps.ACT_CancelRequirement ($Requirement: TraceOps.Requirement)
+begin
+  rollback $Requirement;
+  close page;
+end;
+/
+
+-- MARK: Delete
+
+/**
+ * Deletes a requirement and everything under it.
+ *
+ * Deleting a branch node without its descendants would orphan them — the parent
+ * association is DELETE_BUT_KEEP_REFERENCES — so the subtree is removed
+ * deepest-first. Guardrail links cascade with their requirement.
+ *
+ * The walk marks rows with IsMarked, which exists for nothing else. The obvious
+ * shortcut — reusing IsSelected, which is already there — is a data-loss bug:
+ * IsSelected is the denormalised row selection (FINDINGS #14), so every delete
+ * also took out whichever requirement the user had selected, subtree and all.
+ */
+create or replace microflow TraceOps.ACT_DeleteRequirement ($Requirement: TraceOps.Requirement)
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+  declare $Level Integer = 0;
+
+  -- Clear any marks a previous, interrupted delete may have left behind.
+  retrieve $Stale from TraceOps.Requirement where [IsMarked = true];
+  loop $Old in $Stale
+  begin
+    change $Old (IsMarked = false);
+    commit $Old;
+  end loop;
+
+  -- Mark the subtree by walking down from this node.
+  retrieve $Marked from TraceOps.Requirement where [ReqId = $Requirement/ReqId];
+  loop $Seed in $Marked
+  begin
+    change $Seed (IsMarked = true);
+    commit $Seed;
+  end loop;
+
+  set $Level = 0;
+  while $Level < 8
+  begin
+    retrieve $Flagged from TraceOps.Requirement where [IsMarked = true];
+    loop $Node in $Flagged
+    begin
+      retrieve $Kids from TraceOps.Requirement
+        where [TraceOps.Requirement_Parent = $Node];
+      loop $Kid in $Kids
+      begin
+        change $Kid (IsMarked = true);
+        commit $Kid;
+      end loop;
+    end loop;
+    set $Level = $Level + 1;
+  end while;
+
+  -- Delete deepest-first so no parent disappears before its children.
+  set $Level = 7;
+  while $Level >= 0
+  begin
+    retrieve $Doomed from TraceOps.Requirement where [IsMarked = true and Depth = $Level];
+    loop $Row in $Doomed
+    begin
+      delete $Row;
+    end loop;
+    set $Level = $Level - 1;
+  end while;
+
+  $Recomputed = call microflow TraceOps.ACT_RecomputeTree ();
+
+  return $Done;
+end;
+/
+
+/**
+ * Deletes the requirement currently open in the editor and closes it.
+ */
+create or replace microflow TraceOps.ACT_DeleteFromEditor ($Requirement: TraceOps.Requirement)
+begin
+  $Deleted = call microflow TraceOps.ACT_DeleteRequirement (Requirement = $Requirement);
+  close page;
+end;
+/

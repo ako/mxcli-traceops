@@ -1,0 +1,35 @@
+/**
+ * TraceOps — schema additions required for editing the tree.
+ *
+ * Ordering the tree used to be a build-time concern: the generator emitted a
+ * depth-first SortIndex. Once a user can add or re-parent a node, that order has
+ * to be derivable at runtime, so each node now carries:
+ *
+ *   SortOrder — its position among its siblings (user-facing, stable)
+ *   Path      — a materialised path built from the ancestors' SortOrders
+ *
+ * SortIndex is then just the rank when sorting by Path, which is what lets a
+ * flat ListView render a depth-first tree without recursion.
+ */
+
+alter entity TraceOps.Requirement
+  add attribute SortOrder: integer not null default 0
+  add attribute Path: string(200)
+  /**
+   * The parent, as the parent's ReqId, for the editor.
+   *
+   * MDL's `combobox` maps to the classic enum dropdown and rejects an
+   * association (CE0642 "Property 'Attribute' is required"), so re-parenting is
+   * done by business key: the editor shows this field, and ACT_SaveRequirement
+   * resolves it back onto Requirement_Parent. Blank means "make this a root".
+   */
+  add attribute ParentReqId: string(60)
+  /**
+   * Scratch flag for the delete walk, and *only* for it.
+   *
+   * Deliberately not IsSelected. That attribute is the denormalised row
+   * selection (see FINDINGS #14), so a subtree walk that borrowed it deleted the
+   * currently-selected requirement along with the requested one — silently, and
+   * only when a row happened to be selected.
+   */
+  add attribute IsMarked: boolean default false;

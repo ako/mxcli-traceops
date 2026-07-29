@@ -224,7 +224,7 @@ begin
     Description = '{esc(nd['desc'])}',
     Kind = TraceOps.ReqKind.{nd['kind']}, Status = TraceOps.ReqStatus.{nd['st']},
     OwnerName = '{esc(nd['own'])}', ReleaseTag = '{nd['rel']}', Revision = 'rev 7 · updated 14:02',
-    SortIndex = {row['sort']}, Depth = {row['depth']},
+    SortIndex = {row['sort']}, SortOrder = {row['sort']}, Depth = {row['depth']},
     HasChildren = {'true' if not row['leaf'] else 'false'},
     IsExpanded = {'true' if row['expanded'] else 'false'},
     IsVisible = {'true' if row['visible'] else 'false'},

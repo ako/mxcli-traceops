@@ -1,0 +1,377 @@
+/**
+ * TraceOps — tree recomputation.
+ *
+ * Every derived value on a Requirement (Depth, Path, SortIndex, the subtree
+ * rollups, the pre-rendered cell strings, the coverage buckets and the gap
+ * flags) was produced at seed time by scripts/gen-tree-seed.py. As soon as a
+ * user can add, edit, re-parent or delete a node, those values have to be
+ * rebuildable at runtime — otherwise the tree renders stale counts.
+ *
+ * ACT_RecomputeTree is that rebuild. It mirrors the generator's own roll()/pct()
+ * logic so an edited tree and a freshly seeded one agree.
+ *
+ * Two implementation notes, both load-bearing:
+ *
+ *  - Each pass commits as it goes. The passes retrieve by XPath (a database
+ *    query), so an uncommitted `change` from an earlier pass would be invisible
+ *    to the next one.
+ *  - Depth is walked top-down and rollups bottom-up, level by level, because MDL
+ *    microflows cannot recurse. Eight levels is a generous bound — the design's
+ *    deepest branch is four.
+ */
+
+-- MARK: Integer division
+
+/**
+ * Floor division for integers.
+ *
+ * Mendix has no integer division: `Integer / Integer` yields a Decimal, and
+ * there is no Decimal-to-Integer conversion — `round()`, `floor()`, `trunc()`
+ * and `round(x, 0)` all return a Decimal, so every one of them is a type error
+ * against an Integer attribute (CE0117). Repeated subtraction is the way to get
+ * an Integer quotient in an expression-only language.
+ *
+ * Bounded by the quotient, which here is at most 100 (a percentage).
+ *
+ * Caller trick for round-to-nearest instead of floor: pass (2n + d) over 2d.
+ */
+create or replace microflow TraceOps.ACT_IntDiv ($Numerator: Integer, $Denominator: Integer)
+returns Integer as $Result
+begin
+  declare $Result Integer = 0;
+  declare $Acc Integer = 0;
+
+  if $Denominator <= 0 then
+    return $Result;
+  end if;
+
+  set $Acc = $Denominator;
+  while $Acc <= $Numerator
+  begin
+    set $Result = $Result + 1;
+    set $Acc = $Acc + $Denominator;
+  end while;
+
+  return $Result;
+end;
+/
+
+-- MARK: Per-row presentation
+
+/**
+ * Refreshes one requirement's display strings from its own state and rollups.
+ *
+ * Kept separate from ACT_RecomputeTree so the save action can call it directly
+ * for a single row, and because an enumeration bound to a DYNAMICTEXT renders
+ * its value name rather than its caption (FINDINGS #19) — the labels have to be
+ * materialised as strings.
+ */
+create or replace microflow TraceOps.ACT_SetRequirementLabels ($Requirement: TraceOps.Requirement)
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+  declare $Total Integer = 0;
+  declare $Leaves Integer = 1;
+
+  -- Kind badge
+  if $Requirement/Kind = TraceOps.ReqKind.epic then
+    change $Requirement (KindLabel = 'EPIC');
+  end if;
+  if $Requirement/Kind = TraceOps.ReqKind.cap then
+    change $Requirement (KindLabel = 'CAP');
+  end if;
+  if $Requirement/Kind = TraceOps.ReqKind.feat then
+    change $Requirement (KindLabel = 'FEAT');
+  end if;
+  if $Requirement/Kind = TraceOps.ReqKind.req then
+    change $Requirement (KindLabel = 'REQ');
+  end if;
+  if $Requirement/Kind = TraceOps.ReqKind.nfr then
+    change $Requirement (KindLabel = 'NFR');
+  end if;
+
+  -- Status chip
+  if $Requirement/Status = TraceOps.ReqStatus.draft then
+    change $Requirement (StatusLabel = 'draft', SessionCell = '—');
+  end if;
+  if $Requirement/Status = TraceOps.ReqStatus.specified then
+    change $Requirement (StatusLabel = 'specified', SessionCell = '—');
+  end if;
+  if $Requirement/Status = TraceOps.ReqStatus.mapped then
+    change $Requirement (StatusLabel = 'mapped', SessionCell = '—');
+  end if;
+  if $Requirement/Status = TraceOps.ReqStatus.dev then
+    change $Requirement (StatusLabel = 'in session', SessionCell = 'live');
+  end if;
+  if $Requirement/Status = TraceOps.ReqStatus.built then
+    change $Requirement (StatusLabel = 'built', SessionCell = '—');
+  end if;
+  if $Requirement/Status = TraceOps.ReqStatus.review then
+    change $Requirement (StatusLabel = 'in review', SessionCell = 'review');
+  end if;
+  if $Requirement/Status = TraceOps.ReqStatus.verified then
+    change $Requirement (StatusLabel = 'verified', SessionCell = '—');
+  end if;
+  if $Requirement/Status = TraceOps.ReqStatus.blocked then
+    change $Requirement (StatusLabel = 'blocked', SessionCell = 'failed');
+  end if;
+
+  -- Artifact cell
+  if $Requirement/RollArtifacts > 0 then
+    change $Requirement (ArtifactCell = toString($Requirement/RollArtifacts));
+  else
+    change $Requirement (ArtifactCell = '—');
+  end if;
+
+  -- Tests cell: "passed" when all green, "passed/total" when some fail
+  set $Total = $Requirement/RollTestsPassed + $Requirement/RollTestsFailed;
+  if $Total = 0 then
+    change $Requirement (TestsCell = '—');
+  else
+    if $Requirement/RollTestsFailed > 0 then
+      change $Requirement (TestsCell = toString($Requirement/RollTestsPassed) + '/' + toString($Total));
+    else
+      change $Requirement (TestsCell = toString($Requirement/RollTestsPassed));
+    end if;
+  end if;
+
+  -- Guardrail cell: mapped count, with a warning marker when any subtree violates
+  if $Requirement/RollMapped > 0 then
+    if $Requirement/RollViolations > 0 then
+      change $Requirement (GuardrailCell = toString($Requirement/RollMapped) + '⚠' + toString($Requirement/RollViolations));
+    else
+      change $Requirement (GuardrailCell = toString($Requirement/RollMapped));
+    end if;
+  else
+    if $Requirement/RollViolations > 0 then
+      change $Requirement (GuardrailCell = '⚠' + toString($Requirement/RollViolations));
+    else
+      change $Requirement (GuardrailCell = '—');
+    end if;
+  end if;
+
+  -- Coverage segments, quantised to the 0..20 bucket classes the theme generates
+  set $Leaves = $Requirement/RollLeaves;
+  if $Leaves < 1 then
+    set $Leaves = 1;
+  end if;
+  -- Rounded to nearest via ACT_IntDiv's (2n + d) / 2d trick — see that flow for
+  -- why plain division cannot produce an Integer here.
+  $VerifiedB = call microflow TraceOps.ACT_IntDiv (
+    Numerator = $Requirement/RollVerified * 40 + $Leaves, Denominator = $Leaves * 2);
+  $BuiltB = call microflow TraceOps.ACT_IntDiv (
+    Numerator = $Requirement/RollBuilt * 40 + $Leaves, Denominator = $Leaves * 2);
+  $DevB = call microflow TraceOps.ACT_IntDiv (
+    Numerator = $Requirement/RollDev * 40 + $Leaves, Denominator = $Leaves * 2);
+  $VerifiedPct = call microflow TraceOps.ACT_IntDiv (
+    Numerator = $Requirement/RollVerified * 200 + $Leaves, Denominator = $Leaves * 2);
+
+  change $Requirement (
+    VerifiedBucket = $VerifiedB,
+    BuiltBucket = $BuiltB,
+    DevBucket = $DevB,
+    VerifiedPercent = $VerifiedPct
+  );
+
+  -- Gap flags used by the cockpit columns and the tree filters
+  change $Requirement (HasViolation = $Requirement/RollViolations > 0);
+  if $Requirement/HasChildren then
+    change $Requirement (IsLeaf = false, HasNoImplementation = false, HasNoPassingTest = false);
+  else
+    change $Requirement (
+      IsLeaf = true,
+      HasNoImplementation = $Requirement/RollArtifacts = 0,
+      HasNoPassingTest = $Requirement/RollArtifacts > 0 and $Requirement/RollTestsPassed = 0
+    );
+  end if;
+
+  return $Done;
+end;
+/
+
+-- MARK: Whole-tree rebuild
+
+/**
+ * Rebuilds every derived value on the requirement tree, then reapplies
+ * visibility. Call after any structural change (create, delete, re-parent) or
+ * any edit that touches status, counters or guardrail links.
+ */
+create or replace microflow TraceOps.ACT_RecomputeTree ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+  declare $Level Integer = 0;
+  declare $Index Integer = 0;
+  declare $Leaves Integer = 0;
+  declare $Verified Integer = 0;
+  declare $Built Integer = 0;
+  declare $Dev Integer = 0;
+  declare $Mapped Integer = 0;
+  declare $Artifacts Integer = 0;
+  declare $Passed Integer = 0;
+  declare $Failed Integer = 0;
+  declare $Violations Integer = 0;
+  declare $Blocked Integer = 0;
+  declare $OwnVio Integer = 0;
+  declare $LinkCount Integer = 0;
+
+  -- Pass 1 — Depth, top-down. Roots first, then each level seeds the next.
+  retrieve $Roots from TraceOps.Requirement
+    where [not(TraceOps.Requirement_Parent/TraceOps.Requirement)];
+  loop $Root in $Roots
+  begin
+    change $Root (Depth = 0);
+    commit $Root;
+  end loop;
+
+  set $Level = 0;
+  while $Level < 8
+  begin
+    retrieve $Parents from TraceOps.Requirement where [Depth = $Level];
+    loop $Parent in $Parents
+    begin
+      retrieve $Kids from TraceOps.Requirement
+        where [TraceOps.Requirement_Parent = $Parent];
+      loop $Kid in $Kids
+      begin
+        change $Kid (Depth = $Level + 1);
+        commit $Kid;
+      end loop;
+    end loop;
+    set $Level = $Level + 1;
+  end while;
+
+  -- Pass 2 — HasChildren and the materialised Path, top-down.
+  -- Offsetting SortOrder by 10000 makes every segment the same width, so plain
+  -- lexicographic ordering of Path is depth-first order.
+  set $Level = 0;
+  while $Level < 8
+  begin
+    retrieve $Nodes from TraceOps.Requirement where [Depth = $Level];
+    loop $Node in $Nodes
+    begin
+      retrieve $NodeKids from TraceOps.Requirement
+        where [TraceOps.Requirement_Parent = $Node];
+      if $NodeKids = empty then
+        change $Node (HasChildren = false);
+      else
+        change $Node (HasChildren = true);
+      end if;
+
+      retrieve $NodeParent from $Node/TraceOps.Requirement_Parent;
+      if $NodeParent = empty then
+        change $Node (Path = toString($Node/SortOrder + 10000), ParentReqId = '');
+      else
+        change $Node (
+          Path = $NodeParent/Path + '/' + toString($Node/SortOrder + 10000),
+          ParentReqId = $NodeParent/ReqId
+        );
+      end if;
+      commit $Node;
+    end loop;
+    set $Level = $Level + 1;
+  end while;
+
+  -- Pass 3 — SortIndex is the rank in Path order.
+  retrieve $Ordered from TraceOps.Requirement sort by TraceOps.Requirement.Path asc;
+  set $Index = 0;
+  loop $Row in $Ordered
+  begin
+    change $Row (SortIndex = $Index);
+    commit $Row;
+    set $Index = $Index + 1;
+  end loop;
+
+  -- Pass 4 — rollups, bottom-up so a parent reads its children's finished totals.
+  set $Level = 7;
+  while $Level >= 0
+  begin
+    retrieve $Level4 from TraceOps.Requirement where [Depth = $Level];
+    loop $Node4 in $Level4
+    begin
+      retrieve $Kids4 from TraceOps.Requirement
+        where [TraceOps.Requirement_Parent = $Node4];
+      retrieve $Links from TraceOps.GuardrailLink
+        where [TraceOps.GuardrailLink_Requirement = $Node4];
+      retrieve $Vios from TraceOps.GuardrailLink
+        where [TraceOps.GuardrailLink_Requirement = $Node4 and IsViolation = true];
+
+      set $LinkCount = 0;
+      loop $Link in $Links
+      begin
+        set $LinkCount = $LinkCount + 1;
+      end loop;
+      set $OwnVio = 0;
+      loop $Vio in $Vios
+      begin
+        set $OwnVio = $OwnVio + 1;
+      end loop;
+
+      if $Kids4 = empty then
+        -- Leaf: it counts as one requirement in its own right.
+        set $Leaves = 1;
+        set $Verified = if $Node4/Status = TraceOps.ReqStatus.verified then 1 else 0;
+        set $Built = if $Node4/Status = TraceOps.ReqStatus.built or $Node4/Status = TraceOps.ReqStatus.review then 1 else 0;
+        set $Dev = if $Node4/Status = TraceOps.ReqStatus.dev then 1 else 0;
+        set $Blocked = if $Node4/Status = TraceOps.ReqStatus.blocked then 1 else 0;
+        set $Mapped = if $LinkCount > 0 then 1 else 0;
+        set $Artifacts = $Node4/ArtifactCount;
+        set $Passed = $Node4/TestsPassed;
+        set $Failed = $Node4/TestsFailed;
+        set $Violations = $OwnVio;
+      else
+        -- Branch: sum the children, then add this node's own counters.
+        set $Leaves = 0;
+        set $Verified = 0;
+        set $Built = 0;
+        set $Dev = 0;
+        set $Mapped = 0;
+        set $Artifacts = 0;
+        set $Passed = 0;
+        set $Failed = 0;
+        set $Violations = 0;
+        set $Blocked = 0;
+        loop $Kid4 in $Kids4
+        begin
+          set $Leaves = $Leaves + $Kid4/RollLeaves;
+          set $Verified = $Verified + $Kid4/RollVerified;
+          set $Built = $Built + $Kid4/RollBuilt;
+          set $Dev = $Dev + $Kid4/RollDev;
+          set $Mapped = $Mapped + $Kid4/RollMapped;
+          set $Artifacts = $Artifacts + $Kid4/RollArtifacts;
+          set $Passed = $Passed + $Kid4/RollTestsPassed;
+          set $Failed = $Failed + $Kid4/RollTestsFailed;
+          set $Violations = $Violations + $Kid4/RollViolations;
+          set $Blocked = $Blocked + $Kid4/RollBlocked;
+        end loop;
+        set $Artifacts = $Artifacts + $Node4/ArtifactCount;
+        set $Passed = $Passed + $Node4/TestsPassed;
+        set $Failed = $Failed + $Node4/TestsFailed;
+        set $Violations = $Violations + $OwnVio;
+      end if;
+
+      change $Node4 (
+        RollLeaves = $Leaves, RollVerified = $Verified, RollBuilt = $Built,
+        RollDev = $Dev, RollMapped = $Mapped, RollArtifacts = $Artifacts,
+        RollTestsPassed = $Passed, RollTestsFailed = $Failed,
+        RollViolations = $Violations, RollBlocked = $Blocked
+      );
+      commit $Node4;
+    end loop;
+    set $Level = $Level - 1;
+  end while;
+
+  -- Pass 5 — presentation strings, buckets and gap flags.
+  retrieve $All from TraceOps.Requirement;
+  loop $Node5 in $All
+  begin
+    $Labelled = call microflow TraceOps.ACT_SetRequirementLabels (Requirement = $Node5);
+  end loop;
+  commit $All refresh;
+
+  -- Visibility depends on the freshly computed HasChildren and rollups.
+  $Applied = call microflow TraceOps.ACT_ApplyTreeState ();
+
+  return $Done;
+end;
+/

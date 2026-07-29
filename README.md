@@ -110,6 +110,10 @@ node scripts/capture-screenshots.js
 | `06-navigation-flows.mdl` | view navigation + cockpit drill-downs |
 | `07-shell-snippets.mdl` | top bar, sidebar, status bar |
 | `08`–`16` | the six pages and the navigation profile |
+| `17-crud-domain.mdl` | `SortOrder`, `Path`, `ParentReqId` — the editable tree keys |
+| `18-recompute.mdl` | `ACT_RecomputeTree` + the integer-division helper |
+| `19-crud-flows.mdl` | new / edit / save / cancel / delete |
+| `20-page-requirement-edit.mdl` | the requirement editor pop-up |
 
 The numbering is the apply order — later files depend on earlier ones.
 
@@ -156,28 +160,61 @@ exists and drives routing.
 
 ---
 
-## Scope: this is a read-only reproduction of the design
+## Editing requirements
 
-The prototype is a dashboard, and so is this — it faithfully reproduces the
-design's **look and its read/navigate behaviour**, not a full CRUD application.
-Concretely:
+The requirement tree is fully editable. `+ New requirement` in the toolbar creates
+a root node, the `+` on any row creates a child of it, and `✎` opens the same
+editor on an existing one.
 
-| Works | Does not exist |
-| --- | --- |
-| Expand / collapse the tree, per row and via Collapse all / Expand all | Adding a requirement |
-| The four filter chips, and the 1a/1b layout toggle | Editing any field |
-| Selecting a requirement, session or queue item (drives the detail panes) | Deleting anything |
-| Navigating between the six views, and the cockpit drill-downs | Login / user roles (security is off) |
+![Requirement editor](docs/screenshots/requirement-editor.png)
 
-There are **no input widgets, no create/edit/delete microflows and no edit pages**
-anywhere in the app. The `+ New requirement` button in the tree toolbar is
-deliberately inert — it reproduces the prototype's button, which is also a mockup.
-The only writes are the interaction microflows that move display state
-(expansion, filters, selection).
+Only the fields a user can legitimately author are on the form — id, kind, title,
+intent, status, parent, owner, release, sibling order and the evidence counters.
+Everything else on a row is derived and belongs to `ACT_RecomputeTree`.
 
-Making it editable is a well-defined next step — an edit page per entity, create /
-save / delete microflows, and a real action on that button — but it is not what
-is here today.
+**Every write goes through that rebuild.** Saving or deleting re-derives the whole
+tree in five passes: `Depth` top-down, then `HasChildren` and the materialised
+`Path`, then `SortIndex` as the rank in `Path` order, then the subtree rollups
+bottom-up, then the display strings, coverage buckets and gap flags. So adding a
+child immediately moves its ancestors' artifact, test and guardrail counts, its
+coverage bar and the cockpit's gap columns — the derived data can never drift from
+the rows. It also means the recompute is O(tree), which is fine at 81 nodes and
+would need to become incremental at 10 000.
+
+Re-parenting is done by typing a parent id rather than picking from a list
+(`combobox` cannot bind an association — [FINDINGS.md](FINDINGS.md) #23), which
+puts the validation in the save microflow where it belongs: the id must exist, be
+unique, and not be the node itself or one of its own descendants. Deleting removes
+the whole subtree deepest-first, because the parent association keeps references
+and would otherwise orphan the branch.
+
+`scripts/smoke-crud.js` drives create → edit → delete through the browser and
+asserts the rollups move and come back:
+
+```
+$ node scripts/smoke-crud.js
+PASS  editor opens on add-child (no runtime error)
+PASS  new row appears in the tree  — {"depth":"1","status":"draft","artifacts":"3","tests":"5"}
+PASS  new row is a child of MES (depth 1)
+PASS  MES artifact rollup grew by 3  — 74 -> 77
+PASS  edited artifact count re-renders  — artifacts="10"
+PASS  MES rollup follows the edit  — 84 (expected 84)
+PASS  row is gone after delete
+PASS  MES rollup returns to its original value  — 74 vs 74
+PASS  delete removed nothing else  — MES QMS PLM ANA PLT EDG vs MES QMS PLM ANA PLT EDG
+```
+
+That last check is not decoration. The subtree walk originally marked rows with
+`IsSelected` — which is the *denormalised row selection*, not scratch space — so
+every delete quietly took out the selected requirement's subtree as well. All the
+other assertions passed while it did ([FINDINGS.md](FINDINGS.md) #26).
+
+### What is still read-only
+
+The other five views reproduce the design's **look and its read/navigate
+behaviour** only. There are no edit pages for guardrails, ADRs, agent sessions,
+validation-queue items, risks or releases — those entities are seeded and
+displayed. Security is off, so there is no login or user role either.
 
 ## Known gaps
 
@@ -204,4 +241,6 @@ is here today.
 - **[FINDINGS.md](FINDINGS.md)** — a running log of every mxcli bug, surprise and
   workaround hit while building this, numbered, with the exact command and output.
   Two of them are silent writer bugs that pass `mxcli check` and only fail at
-  MxBuild.
+  MxBuild, and three came out of making the tree editable — Mendix has no integer
+  division, `combobox` cannot bind an association, and `not null` validates on
+  assignment rather than on commit.
