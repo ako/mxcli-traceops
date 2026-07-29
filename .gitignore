@@ -1,0 +1,79 @@
+# The toolchain is rebuilt by scripts/setup-tools.sh on every session start.
+# Nothing installed at runtime belongs in git.
+
+# Mendix build output
+*.mda
+deployment/
+
+# Marketplace module packages, EXCEPT the app's widget dependencies.
+# TraceOps/widgets/*.mpk are required to build: without them mxbuild fails with
+# CE0462 "Could not find widget 'Image' in the 'widgets' directory" (verified by
+# building with the directory moved aside). They are project dependencies, not
+# toolchain binaries, so they are committed.
+*.mpk
+!TraceOps/widgets/*.mpk
+javasource/**/proxies/
+
+# Mendix project working state
+*.mpr.bak
+*.mpr-journal
+modelreflection/
+.mendix-cache/
+
+# Toolchain artifacts (installed to /opt, ~/.mxcli, /usr/local/bin — never here)
+/mxcli
+bin/
+*.jar
+mxcli-src/
+
+# Local runtime state
+*.log
+logs/
+.tmp/
+tmp/
+
+# Playwright / screenshots — except the README's committed captures
+.playwright-cli/
+screenshots/
+!docs/screenshots/
+test-results/
+
+# Node
+node_modules/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Claude Code local overrides (settings.json IS committed)
+.claude/settings.local.json
+
+# --- Mendix app (TraceOps/) -------------------------------------------------
+# The .mpr + mprcontents/ ARE committed — they are the model. Everything below
+# is build output, downloaded content, or local run state.
+TraceOps/deployment/
+TraceOps/theme-cache/
+TraceOps/.mendix-cache/
+TraceOps/.mxcli/
+TraceOps/node_modules/
+TraceOps/**/node_modules/
+TraceOps/mxcli
+TraceOps/mxcli.exe
+TraceOps/*.mpr.bak
+TraceOps/*.mpr.lock
+TraceOps/mprcontents/mprjournal*
+TraceOps/javasource/*/proxies/
+TraceOps/javasource/system/
+TraceOps/releases/
+TraceOps/packages/
+TraceOps/project-settings.user.json
+TraceOps/.claude/settings.local.json
+
+# playwright-core is installed ad hoc for scripts/capture-screenshots.js
+TraceOps/package-lock.json
+TraceOps/package.json
+__pycache__/

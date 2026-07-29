@@ -1,0 +1,167 @@
+/**
+ * TraceOps — list datasources for the selected-object panels.
+ *
+ * These exist because the trace-lanes and session-detail panels sit outside the
+ * DataView of the object they describe, so their ListViews cannot reach it via
+ * $currentObject and need an explicit microflow datasource instead.
+ */
+
+/**
+ * Guardrail links of the currently selected requirement, for the trace lanes.
+ */
+create microflow TraceOps.DS_SelectedGuardrailLinks ()
+returns list of TraceOps.GuardrailLink as $Links
+begin
+  $Requirement = call microflow TraceOps.DS_SelectedRequirement ();
+
+  retrieve $Links from TraceOps.GuardrailLink
+    where [TraceOps.GuardrailLink_Requirement = $Requirement]
+    sort by TraceOps.GuardrailLink.SortIndex asc;
+
+  return $Links;
+end;
+/
+
+/**
+ * Log lines of the currently selected agent session.
+ */
+create microflow TraceOps.DS_SelectedSessionLog ()
+returns list of TraceOps.CodeLine as $Lines
+begin
+  $Session = call microflow TraceOps.DS_SelectedSession ();
+
+  retrieve $Lines from TraceOps.CodeLine
+    where [TraceOps.CodeLine_AgentSession = $Session and LineKind = 'sessionlog']
+    sort by TraceOps.CodeLine.SortIndex asc;
+
+  return $Lines;
+end;
+/
+
+/**
+ * Files touched by the currently selected agent session.
+ */
+create microflow TraceOps.DS_SelectedSessionFiles ()
+returns list of TraceOps.SessionArtifact as $Files
+begin
+  $Session = call microflow TraceOps.DS_SelectedSession ();
+
+  retrieve $Files from TraceOps.SessionArtifact
+    where [TraceOps.SessionArtifact_AgentSession = $Session]
+    sort by TraceOps.SessionArtifact.SortIndex asc;
+
+  return $Files;
+end;
+/
+
+/**
+ * Guardrails the currently selected agent session was briefed on.
+ */
+create microflow TraceOps.DS_SelectedSessionGuardrails ()
+returns list of TraceOps.SessionGuardrail as $Guards
+begin
+  $Session = call microflow TraceOps.DS_SelectedSession ();
+
+  retrieve $Guards from TraceOps.SessionGuardrail
+    where [TraceOps.SessionGuardrail_AgentSession = $Session]
+    sort by TraceOps.SessionGuardrail.SortIndex asc;
+
+  return $Guards;
+end;
+/
+
+/**
+ * Acceptance criteria of the selected validation item.
+ */
+create microflow TraceOps.DS_ValCriteria ()
+returns list of TraceOps.ValidationRow as $Rows
+begin
+  $Item = call microflow TraceOps.DS_SelectedValidation ();
+
+  retrieve $Rows from TraceOps.ValidationRow
+    where [TraceOps.ValidationRow_ValidationItem = $Item and RowKind = 'criterion']
+    sort by TraceOps.ValidationRow.SortIndex asc;
+
+  return $Rows;
+end;
+/
+
+/**
+ * Guardrail checks of the selected validation item.
+ */
+create microflow TraceOps.DS_ValGuardrails ()
+returns list of TraceOps.ValidationRow as $Rows
+begin
+  $Item = call microflow TraceOps.DS_SelectedValidation ();
+
+  retrieve $Rows from TraceOps.ValidationRow
+    where [TraceOps.ValidationRow_ValidationItem = $Item and RowKind = 'guardrail']
+    sort by TraceOps.ValidationRow.SortIndex asc;
+
+  return $Rows;
+end;
+/
+
+/**
+ * Test results of the selected validation item.
+ */
+create microflow TraceOps.DS_ValTests ()
+returns list of TraceOps.ValidationRow as $Rows
+begin
+  $Item = call microflow TraceOps.DS_SelectedValidation ();
+
+  retrieve $Rows from TraceOps.ValidationRow
+    where [TraceOps.ValidationRow_ValidationItem = $Item and RowKind = 'test']
+    sort by TraceOps.ValidationRow.SortIndex asc;
+
+  return $Rows;
+end;
+/
+
+/**
+ * Changed files of the selected validation item.
+ */
+create microflow TraceOps.DS_ValDiff ()
+returns list of TraceOps.ValidationRow as $Rows
+begin
+  $Item = call microflow TraceOps.DS_SelectedValidation ();
+
+  retrieve $Rows from TraceOps.ValidationRow
+    where [TraceOps.ValidationRow_ValidationItem = $Item and RowKind = 'diff']
+    sort by TraceOps.ValidationRow.SortIndex asc;
+
+  return $Rows;
+end;
+/
+
+/**
+ * Test-run log lines of the selected validation item.
+ */
+create microflow TraceOps.DS_ValTestLog ()
+returns list of TraceOps.CodeLine as $Lines
+begin
+  $Item = call microflow TraceOps.DS_SelectedValidation ();
+
+  retrieve $Lines from TraceOps.CodeLine
+    where [TraceOps.CodeLine_ValidationItem = $Item and LineKind = 'testlog']
+    sort by TraceOps.CodeLine.SortIndex asc;
+
+  return $Lines;
+end;
+/
+
+/**
+ * Diff snippet lines of the selected validation item.
+ */
+create microflow TraceOps.DS_ValDiffSnippet ()
+returns list of TraceOps.CodeLine as $Lines
+begin
+  $Item = call microflow TraceOps.DS_SelectedValidation ();
+
+  retrieve $Lines from TraceOps.CodeLine
+    where [TraceOps.CodeLine_ValidationItem = $Item and LineKind = 'diff']
+    sort by TraceOps.CodeLine.SortIndex asc;
+
+  return $Lines;
+end;
+/

@@ -1,0 +1,497 @@
+/**
+ * TraceOps — agent sessions and validation queue seed.
+ *
+ * Session logs, test logs and diff snippets are seeded as ordered CodeLine child
+ * rows because MDL string literals cannot span lines. IsTail marks the last two
+ * log lines, which is all the cockpit mini-card renders.
+ */
+
+-- MARK: Agent sessions
+
+/**
+ * Seeds the nine Claude Code agent sessions with their logs and touched files.
+ */
+create or replace microflow TraceOps.SEED_Sessions ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  -- CC-4471 — running
+  $s1 = create TraceOps.AgentSession (SessionId = 'CC-4471', Status = TraceOps.SessionStatus.running,
+    StatusLabel = 'running', Task = 'Implement offline confirmation buffer with ordered replay',
+    RequirementRef = 'REQ-MES-1-3-2', FileCount = 7, TestsPassed = 4, TestsFailed = 3,
+    Spend = '$18.40', Elapsed = '12m', Branch = 'agent/mes-offline-buffer',
+    ModelName = 'claude-sonnet-4.6', FileCell = '7', TestsCell = '4/7', SortIndex = 1);
+  commit $s1;
+  $s1l1 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'step',
+    Text = '› writing edge/buffer/offline_queue.ts', IsTail = false, SortIndex = 1);
+  set $s1l1/TraceOps.CodeLine_AgentSession = $s1;
+  commit $s1l1;
+  $s1l2 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'step',
+    Text = '› pytest tests/mes/test_offline_buffer.py — 3 failed, 4 passed', IsTail = false, SortIndex = 2);
+  set $s1l2/TraceOps.CodeLine_AgentSession = $s1;
+  commit $s1l2;
+  $s1l3 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'fail',
+    Text = '✗ offline_buffer_encrypted_at_rest: IndexedDB store created without SubtleCrypto wrapper',
+    IsTail = false, SortIndex = 3);
+  set $s1l3/TraceOps.CodeLine_AgentSession = $s1;
+  commit $s1l3;
+  $s1l4 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'step',
+    Text = '› re-reading guardrail ARC-5 from context', IsTail = true, SortIndex = 4);
+  set $s1l4/TraceOps.CodeLine_AgentSession = $s1;
+  commit $s1l4;
+  $s1l5 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'step',
+    Text = '› proposing WebCrypto AES-GCM wrapper around queue writes', IsTail = true, SortIndex = 5);
+  set $s1l5/TraceOps.CodeLine_AgentSession = $s1;
+  commit $s1l5;
+  $s1g1 = create TraceOps.SessionGuardrail (Label = 'ARC-5 · Sensitive data encrypted at rest and in transit',
+    IsAtRisk = true, SortIndex = 1);
+  set $s1g1/TraceOps.SessionGuardrail_AgentSession = $s1;
+  commit $s1g1;
+  $s1g2 = create TraceOps.SessionGuardrail (Label = 'ARC-8 · Event-driven over polling',
+    IsAtRisk = true, SortIndex = 2);
+  set $s1g2/TraceOps.SessionGuardrail_AgentSession = $s1;
+  commit $s1g2;
+  $s1g3 = create TraceOps.SessionGuardrail (Label = 'ARC-1 · Explicit domain state machines',
+    IsAtRisk = false, SortIndex = 3);
+  set $s1g3/TraceOps.SessionGuardrail_AgentSession = $s1;
+  commit $s1g3;
+  $s1g4 = create TraceOps.SessionGuardrail (Label = 'ARC-9 · Everything auditable, append-only',
+    IsAtRisk = true, SortIndex = 4);
+  set $s1g4/TraceOps.SessionGuardrail_AgentSession = $s1;
+  commit $s1g4;
+  $s1a1 = create TraceOps.SessionArtifact (Path = 'edge/buffer/offline_queue.ts', DiffStat = '+184 −12',
+    ChangeType = TraceOps.FileChange.modified, SortIndex = 1);
+  set $s1a1/TraceOps.SessionArtifact_AgentSession = $s1;
+  commit $s1a1;
+  $s1a2 = create TraceOps.SessionArtifact (Path = 'web/terminal/ConfirmPanel.tsx', DiffStat = '+62 −8',
+    ChangeType = TraceOps.FileChange.modified, SortIndex = 2);
+  set $s1a2/TraceOps.SessionArtifact_AgentSession = $s1;
+  commit $s1a2;
+  $s1a3 = create TraceOps.SessionArtifact (Path = 'services/mes/api/confirm_router.py', DiffStat = '+31 −4',
+    ChangeType = TraceOps.FileChange.modified, SortIndex = 3);
+  set $s1a3/TraceOps.SessionArtifact_AgentSession = $s1;
+  commit $s1a3;
+  $s1a4 = create TraceOps.SessionArtifact (Path = 'tests/mes/test_offline_buffer.py', DiffStat = '+120 −0',
+    ChangeType = TraceOps.FileChange.added, SortIndex = 4);
+  set $s1a4/TraceOps.SessionArtifact_AgentSession = $s1;
+  commit $s1a4;
+  $s1a5 = create TraceOps.SessionArtifact (Path = 'docs/adr/ADR-011.md', DiffStat = '+9 −0',
+    ChangeType = TraceOps.FileChange.modified, SortIndex = 5);
+  set $s1a5/TraceOps.SessionArtifact_AgentSession = $s1;
+  commit $s1a5;
+
+  -- CC-4470 — running
+  $s2 = create TraceOps.AgentSession (SessionId = 'CC-4470', Status = TraceOps.SessionStatus.running,
+    StatusLabel = 'running', Task = 'X-bar/R chart: switch live feed from REST poll to event stream',
+    RequirementRef = 'REQ-QMS-2-1-3', FileCount = 5, TestsPassed = 0, TestsFailed = 5,
+    Spend = '$11.20', Elapsed = '6m', Branch = 'agent/spc-live-stream',
+    ModelName = 'claude-sonnet-4.6', FileCell = '5', TestsCell = '0/5', SortIndex = 2);
+  commit $s2;
+  $s2l1 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'step',
+    Text = '› reading web/quality/SpcChart.tsx', IsTail = false, SortIndex = 1);
+  set $s2l1/TraceOps.CodeLine_AgentSession = $s2;
+  commit $s2l1;
+  $s2l2 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'fail',
+    Text = '› detected setInterval(250) — conflicts with ARC-8', IsTail = false, SortIndex = 2);
+  set $s2l2/TraceOps.CodeLine_AgentSession = $s2;
+  commit $s2l2;
+  $s2l3 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'step',
+    Text = '› subscribing to /stream/measurements via SSE', IsTail = true, SortIndex = 3);
+  set $s2l3/TraceOps.CodeLine_AgentSession = $s2;
+  commit $s2l3;
+  $s2l4 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'step',
+    Text = '› perf harness: 12 characteristics @ 1 Hz — dropped 4 frames of 600', IsTail = true, SortIndex = 4);
+  set $s2l4/TraceOps.CodeLine_AgentSession = $s2;
+  commit $s2l4;
+  $s2g1 = create TraceOps.SessionGuardrail (Label = 'ARC-8 · Event-driven over polling',
+    IsAtRisk = true, SortIndex = 1);
+  set $s2g1/TraceOps.SessionGuardrail_AgentSession = $s2;
+  commit $s2g1;
+  $s2g2 = create TraceOps.SessionGuardrail (Label = 'ARC-10 · Stated performance budgets per surface',
+    IsAtRisk = true, SortIndex = 2);
+  set $s2g2/TraceOps.SessionGuardrail_AgentSession = $s2;
+  commit $s2g2;
+  $s2g3 = create TraceOps.SessionGuardrail (Label = 'ARC-2 · Metrics computed server-side',
+    IsAtRisk = true, SortIndex = 3);
+  set $s2g3/TraceOps.SessionGuardrail_AgentSession = $s2;
+  commit $s2g3;
+
+  -- CC-4469 — awaiting review
+  $s3 = create TraceOps.AgentSession (SessionId = 'CC-4469', Status = TraceOps.SessionStatus.review,
+    StatusLabel = 'review', Task = 'Auto-raise NC on out-of-control subgroup',
+    RequirementRef = 'REQ-QMS-2-1-4', FileCount = 9, TestsPassed = 11, TestsFailed = 1,
+    Spend = '$26.05', Elapsed = 'done 34m ago', Branch = 'agent/qms-nc-autoraise',
+    ModelName = 'claude-sonnet-4.6', FileCell = '9', TestsCell = '11/12', SortIndex = 3);
+  commit $s3;
+  $s3l1 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'ok',
+    Text = '› all acceptance criteria implemented', IsTail = false, SortIndex = 1);
+  set $s3l1/TraceOps.CodeLine_AgentSession = $s3;
+  commit $s3l1;
+  $s3l2 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'fail',
+    Text = '› pytest 11 passed, 1 failed (alarm_latency_under_5s: p95 = 6.1 s)', IsTail = false, SortIndex = 2);
+  set $s3l2/TraceOps.CodeLine_AgentSession = $s3;
+  commit $s3l2;
+  $s3l3 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'step',
+    Text = '› note for reviewer: latency driven by NC number generator lock', IsTail = true, SortIndex = 3);
+  set $s3l3/TraceOps.CodeLine_AgentSession = $s3;
+  commit $s3l3;
+  $s3l4 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'step',
+    Text = '› queued for human validation', IsTail = true, SortIndex = 4);
+  set $s3l4/TraceOps.CodeLine_AgentSession = $s3;
+  commit $s3l4;
+  $s3g1 = create TraceOps.SessionGuardrail (Label = 'ARC-2 · Metrics computed server-side',
+    IsAtRisk = true, SortIndex = 1);
+  set $s3g1/TraceOps.SessionGuardrail_AgentSession = $s3;
+  commit $s3g1;
+  $s3g2 = create TraceOps.SessionGuardrail (Label = 'ARC-9 · Everything auditable, append-only',
+    IsAtRisk = true, SortIndex = 2);
+  set $s3g2/TraceOps.SessionGuardrail_AgentSession = $s3;
+  commit $s3g2;
+  $s3g3 = create TraceOps.SessionGuardrail (Label = 'ARC-1 · Explicit domain state machines',
+    IsAtRisk = false, SortIndex = 3);
+  set $s3g3/TraceOps.SessionGuardrail_AgentSession = $s3;
+  commit $s3g3;
+
+  -- CC-4468 — queued
+  $s4 = create TraceOps.AgentSession (SessionId = 'CC-4468', Status = TraceOps.SessionStatus.queued,
+    StatusLabel = 'queued', Task = 'Configurable hold reasons per plant',
+    RequirementRef = 'REQ-MES-1-2-3', FileCount = 0, TestsPassed = 0, TestsFailed = 0,
+    Spend = '—', Elapsed = 'queued 3m', Branch = '—',
+    ModelName = 'claude-sonnet-4.6', FileCell = '—', TestsCell = '—', SortIndex = 4);
+  commit $s4;
+  $s4l1 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'step',
+    Text = 'waiting for CC-4471 to release lock on services/mes/workorder/', IsTail = true, SortIndex = 1);
+  set $s4l1/TraceOps.CodeLine_AgentSession = $s4;
+  commit $s4l1;
+  $s4g1 = create TraceOps.SessionGuardrail (Label = 'ARC-6 · Plant-level configuration over code branching',
+    IsAtRisk = true, SortIndex = 1);
+  set $s4g1/TraceOps.SessionGuardrail_AgentSession = $s4;
+  commit $s4g1;
+  $s4g2 = create TraceOps.SessionGuardrail (Label = 'ARC-1 · Explicit domain state machines',
+    IsAtRisk = false, SortIndex = 2);
+  set $s4g2/TraceOps.SessionGuardrail_AgentSession = $s4;
+  commit $s4g2;
+
+  -- CC-4467 — queued
+  $s5 = create TraceOps.AgentSession (SessionId = 'CC-4467', Status = TraceOps.SessionStatus.queued,
+    StatusLabel = 'queued', Task = 'Row-level plant scoping on reporting queries',
+    RequirementRef = 'PLT-3-1', FileCount = 0, TestsPassed = 0, TestsFailed = 0,
+    Spend = '—', Elapsed = 'queued 9m', Branch = '—',
+    ModelName = 'claude-sonnet-4.6', FileCell = '—', TestsCell = '—', SortIndex = 5);
+  commit $s5;
+  $s5l1 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'step',
+    Text = 'waiting for reviewer to accept ADR-013', IsTail = true, SortIndex = 1);
+  set $s5l1/TraceOps.CodeLine_AgentSession = $s5;
+  commit $s5l1;
+  $s5g1 = create TraceOps.SessionGuardrail (Label = 'ARC-4 · Plant is a hard isolation boundary',
+    IsAtRisk = true, SortIndex = 1);
+  set $s5g1/TraceOps.SessionGuardrail_AgentSession = $s5;
+  commit $s5g1;
+  $s5g2 = create TraceOps.SessionGuardrail (Label = 'ARC-5 · Sensitive data encrypted at rest and in transit',
+    IsAtRisk = true, SortIndex = 2);
+  set $s5g2/TraceOps.SessionGuardrail_AgentSession = $s5;
+  commit $s5g2;
+
+  -- CC-4465 — failed
+  $s6 = create TraceOps.AgentSession (SessionId = 'CC-4465', Status = TraceOps.SessionStatus.failed,
+    StatusLabel = 'failed', Task = 'OPC UA subscription reconnect with backoff',
+    RequirementRef = 'EDG-1-1', FileCount = 6, TestsPassed = 5, TestsFailed = 3,
+    Spend = '$31.70', Elapsed = 'failed 1h ago', Branch = 'agent/edge-reconnect',
+    ModelName = 'claude-sonnet-4.6', FileCell = '6', TestsCell = '5/8', SortIndex = 6);
+  commit $s6;
+  $s6l1 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'fail',
+    Text = '✗ test_reconnect_no_duplicate_nodes: 2 registrations for ns=4;i=1102', IsTail = false, SortIndex = 1);
+  set $s6l1/TraceOps.CodeLine_AgentSession = $s6;
+  commit $s6l1;
+  $s6l2 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'fail',
+    Text = '✗ test_backoff_caps_at_60s: observed 120 s', IsTail = false, SortIndex = 2);
+  set $s6l2/TraceOps.CodeLine_AgentSession = $s6;
+  commit $s6l2;
+  $s6l3 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'fail',
+    Text = '✗ test_resubscribe_after_broker_restart: timeout', IsTail = true, SortIndex = 3);
+  set $s6l3/TraceOps.CodeLine_AgentSession = $s6;
+  commit $s6l3;
+  $s6l4 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'step',
+    Text = '› 3 repair attempts exhausted — escalating to human', IsTail = true, SortIndex = 4);
+  set $s6l4/TraceOps.CodeLine_AgentSession = $s6;
+  commit $s6l4;
+  $s6g1 = create TraceOps.SessionGuardrail (Label = 'ARC-8 · Event-driven over polling',
+    IsAtRisk = true, SortIndex = 1);
+  set $s6g1/TraceOps.SessionGuardrail_AgentSession = $s6;
+  commit $s6g1;
+  $s6g2 = create TraceOps.SessionGuardrail (Label = 'ARC-5 · Sensitive data encrypted at rest and in transit',
+    IsAtRisk = true, SortIndex = 2);
+  set $s6g2/TraceOps.SessionGuardrail_AgentSession = $s6;
+  commit $s6g2;
+
+  -- CC-4463 — merged
+  $s7 = create TraceOps.AgentSession (SessionId = 'CC-4463', Status = TraceOps.SessionStatus.merged,
+    StatusLabel = 'merged', Task = 'Effective-dated BOM resolution',
+    RequirementRef = 'PLM-1-2', FileCount = 11, TestsPassed = 11, TestsFailed = 0,
+    Spend = '$42.10', Elapsed = 'merged 4h ago', Branch = 'agent/plm-bom-effectivity',
+    ModelName = 'claude-sonnet-4.6', FileCell = '11', TestsCell = '11/11', SortIndex = 7);
+  commit $s7;
+  $s7l1 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'ok',
+    Text = '✓ 11 passed · guardrail scan clean · approved by M. Koelewijn', IsTail = true, SortIndex = 1);
+  set $s7l1/TraceOps.CodeLine_AgentSession = $s7;
+  commit $s7l1;
+  $s7g1 = create TraceOps.SessionGuardrail (Label = 'ARC-3 · Idempotent integration boundaries',
+    IsAtRisk = false, SortIndex = 1);
+  set $s7g1/TraceOps.SessionGuardrail_AgentSession = $s7;
+  commit $s7g1;
+  $s7g2 = create TraceOps.SessionGuardrail (Label = 'ARC-7 · PLM is the master of part and BOM data',
+    IsAtRisk = false, SortIndex = 2);
+  set $s7g2/TraceOps.SessionGuardrail_AgentSession = $s7;
+  commit $s7g2;
+
+  -- CC-4461 — merged
+  $s8 = create TraceOps.AgentSession (SessionId = 'CC-4461', Status = TraceOps.SessionStatus.merged,
+    StatusLabel = 'merged', Task = 'Pareto of defect codes with drill-through',
+    RequirementRef = 'ANA-1-2', FileCount = 8, TestsPassed = 6, TestsFailed = 2,
+    Spend = '$19.80', Elapsed = 'merged 6h ago', Branch = 'agent/ana-pareto',
+    ModelName = 'claude-sonnet-4.6', FileCell = '8', TestsCell = '6/8', SortIndex = 8);
+  commit $s8;
+  $s8l1 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'ok',
+    Text = '✓ merged with 2 known-flaky tests quarantined by reviewer', IsTail = true, SortIndex = 1);
+  set $s8l1/TraceOps.CodeLine_AgentSession = $s8;
+  commit $s8l1;
+  $s8g1 = create TraceOps.SessionGuardrail (Label = 'ARC-2 · Metrics computed server-side',
+    IsAtRisk = true, SortIndex = 1);
+  set $s8g1/TraceOps.SessionGuardrail_AgentSession = $s8;
+  commit $s8g1;
+  $s8g2 = create TraceOps.SessionGuardrail (Label = 'ARC-10 · Stated performance budgets per surface',
+    IsAtRisk = true, SortIndex = 2);
+  set $s8g2/TraceOps.SessionGuardrail_AgentSession = $s8;
+  commit $s8g2;
+
+  -- CC-4458 — failed
+  $s9 = create TraceOps.AgentSession (SessionId = 'CC-4458', Status = TraceOps.SessionStatus.failed,
+    StatusLabel = 'failed', Task = 'Semantic layer: canonical FPY definition',
+    RequirementRef = 'ANA-3-1', FileCount = 3, TestsPassed = 0, TestsFailed = 0,
+    Spend = '$8.90', Elapsed = 'failed 8h ago', Branch = '—',
+    ModelName = 'claude-sonnet-4.6', FileCell = '3', TestsCell = '—', SortIndex = 9);
+  commit $s9;
+  $s9l1 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'fail',
+    Text = '✗ ARC-12 conflict: two FPY definitions found in repo', IsTail = true, SortIndex = 1);
+  set $s9l1/TraceOps.CodeLine_AgentSession = $s9;
+  commit $s9l1;
+  $s9l2 = create TraceOps.CodeLine (LineKind = 'sessionlog', Tone = 'step',
+    Text = '› blocked pending ADR-014', IsTail = true, SortIndex = 2);
+  set $s9l2/TraceOps.CodeLine_AgentSession = $s9;
+  commit $s9l2;
+  $s9g1 = create TraceOps.SessionGuardrail (Label = 'ARC-12 · One canonical definition per metric',
+    IsAtRisk = true, SortIndex = 1);
+  set $s9g1/TraceOps.SessionGuardrail_AgentSession = $s9;
+  commit $s9g1;
+  $s9g2 = create TraceOps.SessionGuardrail (Label = 'ARC-2 · Metrics computed server-side',
+    IsAtRisk = true, SortIndex = 2);
+  set $s9g2/TraceOps.SessionGuardrail_AgentSession = $s9;
+  commit $s9g2;
+
+  return $Done;
+end;
+/
+
+-- MARK: Validation queue
+
+/**
+ * Seeds the eight validation-queue items, plus the full evidence bundle
+ * (acceptance criteria, guardrail checks, tests, diff and logs) for the
+ * selected item REQ-QMS-2-1-4.
+ */
+create or replace microflow TraceOps.SEED_ValidationQueue ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  $v1 = create TraceOps.ValidationItem (RequirementRef = 'REQ-QMS-2-1-4',
+    Title = 'Out-of-control alarm raises NC within 5 s', Flag = '1 test failing',
+    FlagIsGreen = false, FlagIsFail = true, Age = '34m',
+    Meta = 'CC-4469 · 9 files · 11/12 pass · ARC clean', SessionRef = 'CC-4469',
+    Description = 'When a Nelson rule triggers, the system must automatically open a non-conformance record referencing the violating subgroup, operator and machine, within 5 seconds of measurement capture.',
+    TestSummary = '11 / 12 pass · 1 failed', SortIndex = 1);
+  commit $v1;
+
+  $v1c1 = create TraceOps.ValidationRow (RowKind = 'criterion', Result = TraceOps.CheckResult.pass,
+    Text = 'A Nelson-rule violation creates exactly one NC record per subgroup',
+    Tag = 'proven by TC-9102', SortIndex = 1);
+  set $v1c1/TraceOps.ValidationRow_ValidationItem = $v1;
+  commit $v1c1;
+  $v1c2 = create TraceOps.ValidationRow (RowKind = 'criterion', Result = TraceOps.CheckResult.pass,
+    Text = 'NC references subgroup, characteristic, machine, operator and shift',
+    Tag = 'proven by TC-9103', SortIndex = 2);
+  set $v1c2/TraceOps.ValidationRow_ValidationItem = $v1;
+  commit $v1c2;
+  $v1c3 = create TraceOps.ValidationRow (RowKind = 'criterion', Result = TraceOps.CheckResult.fail,
+    Text = 'NC is created within 5 s of measurement capture (p95)',
+    Tag = 'p95 6.1 s', SortIndex = 3);
+  set $v1c3/TraceOps.ValidationRow_ValidationItem = $v1;
+  commit $v1c3;
+  $v1c4 = create TraceOps.ValidationRow (RowKind = 'criterion', Result = TraceOps.CheckResult.pass,
+    Text = 'Duplicate alarms within the same subgroup do not create extra NCs',
+    Tag = 'proven by TC-9105', SortIndex = 4);
+  set $v1c4/TraceOps.ValidationRow_ValidationItem = $v1;
+  commit $v1c4;
+  $v1c5 = create TraceOps.ValidationRow (RowKind = 'criterion', Result = TraceOps.CheckResult.partial,
+    Text = 'Operator sees the alarm on the terminal without refresh',
+    Tag = 'not covered', SortIndex = 5);
+  set $v1c5/TraceOps.ValidationRow_ValidationItem = $v1;
+  commit $v1c5;
+
+  $v1g1 = create TraceOps.ValidationRow (RowKind = 'guardrail', Result = TraceOps.CheckResult.pass,
+    RefId = 'ARC-2', Text = 'Rule evaluation runs server-side in the SPC service',
+    Tag = 'clean', SortIndex = 1);
+  set $v1g1/TraceOps.ValidationRow_ValidationItem = $v1;
+  commit $v1g1;
+  $v1g2 = create TraceOps.ValidationRow (RowKind = 'guardrail', Result = TraceOps.CheckResult.pass,
+    RefId = 'ARC-9', Text = 'NC creation emits an immutable audit event with actor=system',
+    Tag = 'clean', SortIndex = 2);
+  set $v1g2/TraceOps.ValidationRow_ValidationItem = $v1;
+  commit $v1g2;
+  $v1g3 = create TraceOps.ValidationRow (RowKind = 'guardrail', Result = TraceOps.CheckResult.pass,
+    RefId = 'ARC-1', Text = 'NC lifecycle uses the declared state machine',
+    Tag = 'clean', SortIndex = 3);
+  set $v1g3/TraceOps.ValidationRow_ValidationItem = $v1;
+  commit $v1g3;
+  $v1g4 = create TraceOps.ValidationRow (RowKind = 'guardrail', Result = TraceOps.CheckResult.partial,
+    RefId = 'ARC-10', Text = 'Performance budget declared but not met',
+    Tag = 'at risk', SortIndex = 4);
+  set $v1g4/TraceOps.ValidationRow_ValidationItem = $v1;
+  commit $v1g4;
+
+  $v1t1 = create TraceOps.ValidationRow (RowKind = 'test', Result = TraceOps.CheckResult.pass,
+    RefId = 'TC-9102', Text = 'nelson_rule_1_creates_single_nc', Tag = '0.42s', SortIndex = 1);
+  set $v1t1/TraceOps.ValidationRow_ValidationItem = $v1;
+  commit $v1t1;
+  $v1t2 = create TraceOps.ValidationRow (RowKind = 'test', Result = TraceOps.CheckResult.pass,
+    RefId = 'TC-9103', Text = 'nc_payload_contains_full_context', Tag = '0.31s', SortIndex = 2);
+  set $v1t2/TraceOps.ValidationRow_ValidationItem = $v1;
+  commit $v1t2;
+  $v1t3 = create TraceOps.ValidationRow (RowKind = 'test', Result = TraceOps.CheckResult.fail,
+    RefId = 'TC-9104', Text = 'alarm_latency_under_5s_p95', Tag = '12.8s', SortIndex = 3);
+  set $v1t3/TraceOps.ValidationRow_ValidationItem = $v1;
+  commit $v1t3;
+  $v1t4 = create TraceOps.ValidationRow (RowKind = 'test', Result = TraceOps.CheckResult.pass,
+    RefId = 'TC-9105', Text = 'duplicate_alarm_is_idempotent', Tag = '0.55s', SortIndex = 4);
+  set $v1t4/TraceOps.ValidationRow_ValidationItem = $v1;
+  commit $v1t4;
+  $v1t5 = create TraceOps.ValidationRow (RowKind = 'test', Result = TraceOps.CheckResult.pass,
+    RefId = 'TC-9106', Text = 'audit_event_emitted_on_autoraise', Tag = '0.28s', SortIndex = 5);
+  set $v1t5/TraceOps.ValidationRow_ValidationItem = $v1;
+  commit $v1t5;
+  $v1t6 = create TraceOps.ValidationRow (RowKind = 'test', Result = TraceOps.CheckResult.pass,
+    RefId = 'TC-9107', Text = 'nc_state_machine_transitions_valid', Tag = '0.61s', SortIndex = 6);
+  set $v1t6/TraceOps.ValidationRow_ValidationItem = $v1;
+  commit $v1t6;
+
+  $v1d1 = create TraceOps.ValidationRow (RowKind = 'diff', Result = TraceOps.CheckResult.pass,
+    RefId = 'modified', Text = 'services/qms/spc/rules.py', Tag = '+142 −6', SortIndex = 1);
+  set $v1d1/TraceOps.ValidationRow_ValidationItem = $v1;
+  commit $v1d1;
+  $v1d2 = create TraceOps.ValidationRow (RowKind = 'diff', Result = TraceOps.CheckResult.pass,
+    RefId = 'new', Text = 'services/qms/nc/autoraise.py', Tag = '+98 −0', SortIndex = 2);
+  set $v1d2/TraceOps.ValidationRow_ValidationItem = $v1;
+  commit $v1d2;
+  $v1d3 = create TraceOps.ValidationRow (RowKind = 'diff', Result = TraceOps.CheckResult.pass,
+    RefId = 'modified', Text = 'services/qms/nc/numbering.py', Tag = '+12 −3', SortIndex = 3);
+  set $v1d3/TraceOps.ValidationRow_ValidationItem = $v1;
+  commit $v1d3;
+  $v1d4 = create TraceOps.ValidationRow (RowKind = 'diff', Result = TraceOps.CheckResult.pass,
+    RefId = 'new', Text = 'tests/qms/test_alarm_latency.py', Tag = '+74 −0', SortIndex = 4);
+  set $v1d4/TraceOps.ValidationRow_ValidationItem = $v1;
+  commit $v1d4;
+  $v1d5 = create TraceOps.ValidationRow (RowKind = 'diff', Result = TraceOps.CheckResult.pass,
+    RefId = 'new', Text = 'db/migrations/0148_nc_source.sql', Tag = '+18 −0', SortIndex = 5);
+  set $v1d5/TraceOps.ValidationRow_ValidationItem = $v1;
+  commit $v1d5;
+
+  $v1x1 = create TraceOps.CodeLine (LineKind = 'testlog', Tone = 'step',
+    Text = 'RUN-2288 · pytest -m spc · 12 selected', IsTail = false, SortIndex = 1);
+  set $v1x1/TraceOps.CodeLine_ValidationItem = $v1;
+  commit $v1x1;
+  $v1x2 = create TraceOps.CodeLine (LineKind = 'testlog', Tone = 'fail',
+    Text = 'FAILED tests/qms/test_alarm_latency.py::alarm_latency_under_5s_p95', IsTail = false, SortIndex = 2);
+  set $v1x2/TraceOps.CodeLine_ValidationItem = $v1;
+  commit $v1x2;
+  $v1x3 = create TraceOps.CodeLine (LineKind = 'testlog', Tone = 'fail',
+    Text = '  assert p95 == 6.1 <= 5.0', IsTail = false, SortIndex = 3);
+  set $v1x3/TraceOps.CodeLine_ValidationItem = $v1;
+  commit $v1x3;
+  $v1x4 = create TraceOps.CodeLine (LineKind = 'testlog', Tone = 'step',
+    Text = '  hint: NC number generator serialises on a plant-level advisory lock',
+    IsTail = false, SortIndex = 4);
+  set $v1x4/TraceOps.CodeLine_ValidationItem = $v1;
+  commit $v1x4;
+
+  $v1y1 = create TraceOps.CodeLine (LineKind = 'diff', Tone = 'add',
+    Text = '+ async def autoraise(subgroup: Subgroup, rule: NelsonRule) -> NonConformance:',
+    IsTail = false, SortIndex = 1);
+  set $v1y1/TraceOps.CodeLine_ValidationItem = $v1;
+  commit $v1y1;
+  $v1y2 = create TraceOps.CodeLine (LineKind = 'diff', Tone = 'add',
+    Text = '+     async with audit.actor(SYSTEM), plant_scope(subgroup.plant):',
+    IsTail = false, SortIndex = 2);
+  set $v1y2/TraceOps.CodeLine_ValidationItem = $v1;
+  commit $v1y2;
+  $v1y3 = create TraceOps.CodeLine (LineKind = 'diff', Tone = 'add',
+    Text = '+         nc = await nc_service.open(source=NCSource.SPC_ALARM, subgroup=subgroup)',
+    IsTail = false, SortIndex = 3);
+  set $v1y3/TraceOps.CodeLine_ValidationItem = $v1;
+  commit $v1y3;
+  $v1y4 = create TraceOps.CodeLine (LineKind = 'diff', Tone = 'add',
+    Text = '+         await events.publish(NCOpened(nc.id, rule=rule.code))',
+    IsTail = false, SortIndex = 4);
+  set $v1y4/TraceOps.CodeLine_ValidationItem = $v1;
+  commit $v1y4;
+  $v1y5 = create TraceOps.CodeLine (LineKind = 'diff', Tone = 'add',
+    Text = '+         return nc', IsTail = false, SortIndex = 5);
+  set $v1y5/TraceOps.CodeLine_ValidationItem = $v1;
+  commit $v1y5;
+
+  $v2 = create TraceOps.ValidationItem (RequirementRef = 'PLM-1-2',
+    Title = 'Effective-dated BOM resolution', Flag = 'green',
+    FlagIsGreen = true, FlagIsFail = false, Age = '1h',
+    Meta = 'CC-4463 · 11 files · 11/11 pass · ARC clean', SessionRef = 'CC-4463',
+    TestSummary = '11 / 11 pass', SortIndex = 2);
+  commit $v2;
+  $v3 = create TraceOps.ValidationItem (RequirementRef = 'REQ-MES-1-2-2',
+    Title = 'Illegal transitions rejected with domain error', Flag = '2 tests failing',
+    FlagIsGreen = false, FlagIsFail = true, Age = '2h',
+    Meta = 'CC-4459 · 3 files · 11/13 pass · concurrency', SessionRef = 'CC-4459',
+    TestSummary = '11 / 13 pass · 2 failed', SortIndex = 3);
+  commit $v3;
+  $v4 = create TraceOps.ValidationItem (RequirementRef = 'MES-2-2',
+    Title = 'Forward/backward trace query under 2 s', Flag = 'perf budget',
+    FlagIsGreen = false, FlagIsFail = false, Age = '3h',
+    Meta = 'CC-4457 · p95 2.3 s vs 2.0 s budget', SessionRef = 'CC-4457',
+    TestSummary = 'p95 2.3 s vs 2.0 s budget', SortIndex = 4);
+  commit $v4;
+  $v5 = create TraceOps.ValidationItem (RequirementRef = 'ANA-1-2',
+    Title = 'Pareto of defect codes with drill to NC list', Flag = 'flaky',
+    FlagIsGreen = false, FlagIsFail = false, Age = '5h',
+    Meta = 'CC-4461 · 2 quarantined tests', SessionRef = 'CC-4461',
+    TestSummary = '6 / 8 pass · 2 quarantined', SortIndex = 5);
+  commit $v5;
+  $v6 = create TraceOps.ValidationItem (RequirementRef = 'PLT-2-2',
+    Title = 'Audit export signed and time-stamped', Flag = '1 test failing',
+    FlagIsGreen = false, FlagIsFail = true, Age = '6h',
+    Meta = 'CC-4455 · signature chain on rotated key', SessionRef = 'CC-4455',
+    TestSummary = '8 / 9 pass · 1 failed', SortIndex = 6);
+  commit $v6;
+  $v7 = create TraceOps.ValidationItem (RequirementRef = 'MES-3-2',
+    Title = 'Single-hand workflow for confirmation', Flag = 'UX review',
+    FlagIsGreen = false, FlagIsFail = false, Age = '9h',
+    Meta = 'CC-4451 · needs line-side observation', SessionRef = 'CC-4451',
+    TestSummary = 'awaiting line-side observation', SortIndex = 7);
+  commit $v7;
+  $v8 = create TraceOps.ValidationItem (RequirementRef = 'EDG-1-3',
+    Title = 'Tag mapping configurable per machine type', Flag = 'green',
+    FlagIsGreen = true, FlagIsFail = false, Age = '11h',
+    Meta = 'CC-4448 · 5/5 pass · ARC clean', SessionRef = 'CC-4448',
+    TestSummary = '5 / 5 pass', SortIndex = 8);
+  commit $v8;
+
+  return $Done;
+end;
+/

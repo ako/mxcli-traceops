@@ -1,0 +1,302 @@
+/**
+ * TraceOps — Cockpit.
+ *
+ * Six KPI tiles, three delivery-gap columns plus the live agent console, then
+ * the per-area assurance table, risks and the requirement change log.
+ */
+create or replace page TraceOps.Cockpit (
+  Title: 'Cockpit',
+  Layout: Atlas_Core.Atlas_TopBar,
+  url: 'cockpit'
+)
+{
+  container app (Class: 'tr-app') {
+
+    snippetcall topBar (Snippet: TraceOps.SNIPPET_TopBar)
+
+    container appBody (Class: 'tr-body') {
+      snippetcall sideBar (Snippet: TraceOps.SNIPPET_Sidebar)
+
+      container mainContent (Class: 'tr-content') {
+
+        -- MARK: KPI tiles
+        listview lvKpi (
+          DataSource: database from TraceOps.Kpi sort by SortIndex asc,
+          Class: 'tr-kpi-grid tr-lv'
+        ) {
+          container kpi (Class: 'tr-kpi') {
+            dynamictext kpiLabel (Content: '{1}', ContentParams: [{1} = Label], Class: 'tr-kpi-label tr-block')
+            container kpiMid (Class: 'tr-kpi-mid') {
+              dynamictext kpiValue (
+                Content: '{1}', ContentParams: [{1} = Value],
+                Class: 'tr-kpi-value',
+                DynamicClasses: '''tr-tone--'' + $currentObject/Tone'
+              )
+              dynamictext kpiDelta (
+                Content: '{1}', ContentParams: [{1} = Delta],
+                Class: 'tr-kpi-delta',
+                DynamicClasses: 'if $currentObject/DeltaIsRed then ''tr-kpi-delta--red'' else '''''
+              )
+            }
+            dynamictext kpiSub (Content: '{1}', ContentParams: [{1} = Sub], Class: 'tr-kpi-sub tr-block')
+            container kpiBar (
+              Class: 'tr-kpi-bar',
+              DynamicClasses: '''tr-tone--'' + $currentObject/Tone + '' tr-w-'' + toString($currentObject/BarBucket)'
+            ) {
+              dynamictext kb (Content: ' ')
+            }
+          }
+        }
+
+        -- MARK: Delivery gaps + live agent console
+        container gapRow (Class: 'tr-cols-gap') {
+
+          container gapNoImpl (Class: 'tr-panel') {
+            container gapNoImplHead (Class: 'tr-panel-head') {
+              container gniDot (Class: 'tr-dot tr-dot--red') { dynamictext gnd (Content: ' ') }
+              dynamictext gniTitle (Content: 'No implementation yet', Class: 'tr-panel-title')
+              dynamictext gniCount (Content: '17', Class: 'tr-panel-count tr-panel-count--red')
+              container gniSpacer (Class: 'tr-spacer') { dynamictext gns (Content: ' ') }
+              dynamictext gniHint (Content: 'specified, no artifact', Class: 'tr-panel-hint')
+            }
+            listview lvNoImpl (
+              DataSource: database from TraceOps.Requirement where [IsLeaf = true and RollArtifacts = 0] sort by SortIndex asc,
+              Class: 'tr-panel-body tr-panel-body--tall tr-lv'
+            ) {
+              container niRow (
+                OnClick: microflow TraceOps.ACT_OpenRequirement(Requirement: $currentObject),
+                Class: 'tr-list-row tr-gap-row'
+              ) {
+                dynamictext niId (Content: '{1}', ContentParams: [{1} = ReqId], Class: 'tr-gap-id')
+                dynamictext niTitle (Content: '{1}', ContentParams: [{1} = Title], Class: 'tr-gap-title')
+                dynamictext niTag (
+                  Content: '{1}', ContentParams: [{1} = StatusLabel],
+                  Class: 'tr-chip',
+                  DynamicClasses: '''tr-chip--'' + toString($currentObject/Status)'
+                )
+              }
+            }
+            container gniCta (OnClick: microflow TraceOps.ACT_GoTraceNoImpl, Class: 'tr-panel-cta') {
+              dynamictext gniCtaTxt (Content: 'Open unimplemented filter →')
+            }
+          }
+
+          container gapNoTest (Class: 'tr-panel') {
+            container gapNoTestHead (Class: 'tr-panel-head') {
+              container gntDot (Class: 'tr-dot tr-dot--amber') { dynamictext gtd (Content: ' ') }
+              dynamictext gntTitle (Content: 'Built without passing test', Class: 'tr-panel-title')
+              dynamictext gntCount (Content: '14', Class: 'tr-panel-count tr-panel-count--amber')
+              container gntSpacer (Class: 'tr-spacer') { dynamictext gts (Content: ' ') }
+              dynamictext gntHint (Content: 'artifact, no green evidence', Class: 'tr-panel-hint')
+            }
+            listview lvNoTest (
+              DataSource: database from TraceOps.Requirement where [IsLeaf = true and (TestsFailed > 0 or HasNoPassingTest = true)] sort by SortIndex asc,
+              Class: 'tr-panel-body tr-panel-body--tall tr-lv'
+            ) {
+              container ntRow (
+                OnClick: microflow TraceOps.ACT_OpenRequirement(Requirement: $currentObject),
+                Class: 'tr-list-row tr-gap-row'
+              ) {
+                dynamictext ntId (Content: '{1}', ContentParams: [{1} = ReqId], Class: 'tr-gap-id')
+                dynamictext ntTitle (Content: '{1}', ContentParams: [{1} = Title], Class: 'tr-gap-title')
+                dynamictext ntTag (
+                  Content: '{1}', ContentParams: [{1} = TestsCell],
+                  Class: 'tr-tag',
+                  DynamicClasses: 'if $currentObject/TestsFailed > 0 then ''tr-tag--red'' else ''tr-tag--amber'''
+                )
+              }
+            }
+            container gntCta (OnClick: microflow TraceOps.ACT_GoTraceNoTest, Class: 'tr-panel-cta') {
+              dynamictext gntCtaTxt (Content: 'Open unverified filter →')
+            }
+          }
+
+          container gapVio (Class: 'tr-panel') {
+            container gapVioHead (Class: 'tr-panel-head') {
+              container gvDot (Class: 'tr-dot tr-dot--violet') { dynamictext gvd (Content: ' ') }
+              dynamictext gvTitle (Content: 'Guardrail violations', Class: 'tr-panel-title')
+              dynamictext gvCount (Content: '5', Class: 'tr-panel-count tr-panel-count--violet')
+              container gvSpacer (Class: 'tr-spacer') { dynamictext gvs (Content: ' ') }
+              dynamictext gvHint (Content: 'blocks validation', Class: 'tr-panel-hint')
+            }
+            listview lvVio (
+              DataSource: database from TraceOps.Requirement where [HasViolation = true] sort by SortIndex asc,
+              Class: 'tr-panel-body tr-panel-body--tall tr-lv'
+            ) {
+              container vRow (
+                OnClick: microflow TraceOps.ACT_OpenRequirement(Requirement: $currentObject),
+                Class: 'tr-list-row tr-gap-row'
+              ) {
+                dynamictext vId (Content: '{1}', ContentParams: [{1} = GuardrailCell], Class: 'tr-gap-id')
+                dynamictext vTitle (Content: '{1}', ContentParams: [{1} = Title], Class: 'tr-gap-title')
+                dynamictext vTag (Content: '{1}', ContentParams: [{1} = ReqId], Class: 'tr-tag tr-tag--blue')
+              }
+            }
+            container gvCta (OnClick: microflow TraceOps.ACT_GoTraceViolations, Class: 'tr-panel-cta') {
+              dynamictext gvCtaTxt (Content: 'Open violations filter →')
+            }
+          }
+
+          container sessMini (Class: 'tr-panel') {
+            container sessMiniHead (Class: 'tr-panel-head') {
+              container smDot (Class: 'tr-dot tr-dot--green') { dynamictext smd (Content: ' ') }
+              dynamictext smTitle (Content: 'Claude Code sessions', Class: 'tr-panel-title')
+              container smSpacer (Class: 'tr-spacer') { dynamictext sms (Content: ' ') }
+              container smLink (OnClick: microflow TraceOps.ACT_GoSessions, Class: 'tr-panel-link') {
+                dynamictext smLinkTxt (Content: 'open console →')
+              }
+            }
+            listview lvSessMini (
+              DataSource: database from TraceOps.AgentSession where [Status = 'running' or Status = 'failed' or Status = 'review'] sort by SortIndex asc,
+              Class: 'tr-panel-body tr-lv'
+            ) {
+              container smRow (
+                OnClick: microflow TraceOps.ACT_OpenSession(Session: $currentObject),
+                Class: 'tr-sess-mini'
+              ) {
+                container smTop (Class: 'tr-sess-top') {
+                  dynamictext smId (Content: '{1}', ContentParams: [{1} = SessionId], Class: 'tr-sess-id')
+                  dynamictext smStatus (
+                    Content: '{1}', ContentParams: [{1} = StatusLabel],
+                    Class: 'tr-sstatus',
+                    DynamicClasses: '''tr-sstatus--'' + toString($currentObject/Status)'
+                  )
+                  dynamictext smTask (Content: '{1}', ContentParams: [{1} = Task], Class: 'tr-sess-task')
+                  dynamictext smElapsed (Content: '{1}', ContentParams: [{1} = Elapsed], Class: 'tr-sess-elapsed')
+                }
+                container smMeta (Class: 'tr-sess-meta') {
+                  dynamictext smReq (Content: '{1}', ContentParams: [{1} = RequirementRef], Class: 'tr-sess-req')
+                  dynamictext smFiles (Content: '{1} files', ContentParams: [{1} = FileCell])
+                  dynamictext smTests (Content: '{1} pass', ContentParams: [{1} = TestsCell])
+                  dynamictext smSpend (Content: '{1}', ContentParams: [{1} = Spend])
+                }
+                listview lvSmLog (
+                  DataSource: database from TraceOps.CodeLine where [TraceOps.CodeLine_AgentSession = $currentObject and IsTail = true] sort by SortIndex asc,
+                  Class: 'tr-log tr-lv'
+                ) {
+                  dynamictext smLogLine (
+                    Content: '{1}', ContentParams: [{1} = Text],
+                    Class: 'tr-log-line',
+                    DynamicClasses: '''tr-log-line--'' + $currentObject/Tone'
+                  )
+                }
+              }
+            }
+          }
+        }
+
+        -- MARK: Area assurance, risks and change log
+        container bottomRow (Class: 'tr-cols-bottom') {
+
+          container areaPanel (Class: 'tr-panel') {
+            container areaHead (Class: 'tr-panel-head') {
+              dynamictext areaTitle (Content: 'Delivery assurance by area', Class: 'tr-panel-title')
+              container areaSpacer (Class: 'tr-spacer') { dynamictext asx (Content: ' ') }
+              dynamictext areaHint (Content: 'leaf requirements · rolled up', Class: 'tr-panel-hint')
+            }
+            container areaCols (Class: 'tr-area-head') {
+              dynamictext ahArea (Content: 'Area')
+              dynamictext ahReqs (Content: 'Reqs', Class: 'tr-right')
+              dynamictext ahMapped (Content: 'Mapped', Class: 'tr-right')
+              dynamictext ahBuilt (Content: 'Built', Class: 'tr-right')
+              dynamictext ahVerified (Content: 'Verified', Class: 'tr-right')
+              dynamictext ahCoverage (Content: 'Coverage', Class: 'tr-cell-pad')
+              dynamictext ahRisk (Content: 'Risk', Class: 'tr-right')
+            }
+            listview lvArea (
+              DataSource: database from TraceOps.Requirement where [Depth = 0] sort by SortIndex asc,
+              Class: 'tr-lv'
+            ) {
+              container areaRow (
+                OnClick: microflow TraceOps.ACT_OpenRequirement(Requirement: $currentObject),
+                Class: 'tr-area-row'
+              ) {
+                container areaName (Class: 'tr-area-name') {
+                  container areaSq (
+                    Class: 'tr-sq',
+                    DynamicClasses: 'if $currentObject/RollViolations > 0 then ''tr-sq--red'' else if $currentObject/VerifiedBucket >= 14 then ''tr-sq--green'' else ''tr-sq--amber'''
+                  ) { dynamictext asq (Content: ' ') }
+                  dynamictext areaNameTxt (Content: '{1}', ContentParams: [{1} = Title])
+                }
+                dynamictext areaReqs (Content: '{1}', ContentParams: [{1} = RollLeaves], Class: 'tr-num tr-right')
+                dynamictext areaMapped (Content: '{1}', ContentParams: [{1} = RollMapped], Class: 'tr-num tr-right')
+                dynamictext areaBuilt (Content: '{1}', ContentParams: [{1} = RollBuilt], Class: 'tr-num tr-right')
+                dynamictext areaVerified (
+                  Content: '{1}', ContentParams: [{1} = RollVerified],
+                  Class: 'tr-num tr-right',
+                  DynamicClasses: 'if $currentObject/RollViolations > 0 then ''tr-num--red'' else if $currentObject/VerifiedBucket >= 14 then ''tr-num--green'' else ''tr-num--amber'''
+                )
+                container areaCoverage (Class: 'tr-cell-pad') {
+                  container areaBar (Class: 'tr-bar tr-bar--lg') {
+                    container abV (Class: 'tr-seg tr-seg--verified', DynamicClasses: '''tr-w-'' + toString($currentObject/VerifiedBucket)') { dynamictext av (Content: ' ') }
+                    container abB (Class: 'tr-seg tr-seg--built', DynamicClasses: '''tr-w-'' + toString($currentObject/BuiltBucket)') { dynamictext ab (Content: ' ') }
+                    container abD (Class: 'tr-seg tr-seg--dev', DynamicClasses: '''tr-w-'' + toString($currentObject/DevBucket)') { dynamictext ad (Content: ' ') }
+                  }
+                }
+                dynamictext areaRisk (
+                  Content: '{1} vio', ContentParams: [{1} = RollViolations],
+                  Class: 'tr-num tr-num--sm tr-right',
+                  DynamicClasses: 'if $currentObject/RollViolations > 0 then ''tr-num--red'' else ''tr-num--green'''
+                )
+              }
+            }
+          }
+
+          container riskPanel (Class: 'tr-panel') {
+            container riskHead (Class: 'tr-panel-head') {
+              dynamictext riskTitle (Content: 'Risks & open questions', Class: 'tr-panel-title')
+              container riskSpacer (Class: 'tr-spacer') { dynamictext rs (Content: ' ') }
+              dynamictext riskCount (Content: '7', Class: 'tr-panel-count tr-panel-count--amber')
+            }
+            listview lvRisk (
+              DataSource: database from TraceOps.Risk sort by SortIndex asc,
+              Class: 'tr-lv'
+            ) {
+              container riskRow (Class: 'tr-risk-row') {
+                container riskTop (Class: 'tr-risk-top') {
+                  dynamictext riskSev (
+                    Content: '{1}', ContentParams: [{1} = SeverityLabel],
+                    Class: 'tr-sev',
+                    DynamicClasses: '''tr-sev--'' + toString($currentObject/Severity)'
+                  )
+                  dynamictext riskTitleTxt (Content: '{1}', ContentParams: [{1} = Title], Class: 'tr-risk-title')
+                }
+                dynamictext riskMeta (Content: '{1}', ContentParams: [{1} = Meta], Class: 'tr-meta tr-block')
+              }
+            }
+          }
+
+          container changePanel (Class: 'tr-panel') {
+            container changeHead (Class: 'tr-panel-head') {
+              dynamictext changeTitle (Content: 'Requirement change log', Class: 'tr-panel-title')
+              container changeSpacer (Class: 'tr-spacer') { dynamictext cs (Content: ' ') }
+              dynamictext changeHint (Content: 'last 24h', Class: 'tr-panel-hint')
+            }
+            listview lvChange (
+              DataSource: database from TraceOps.ChangeEntry sort by SortIndex asc,
+              Class: 'tr-lv'
+            ) {
+              container changeRow (Class: 'tr-change-row') {
+                dynamictext changeTime (Content: '{1}', ContentParams: [{1} = TimeLabel], Class: 'tr-change-time')
+                container changeBody (Class: 'tr-block') {
+                  dynamictext changeText (
+                    Content: '{1} {2}',
+                    ContentParams: [{1} = RequirementRef, {2} = Text],
+                    Class: 'tr-change-text tr-block'
+                  )
+                  dynamictext changeWho (
+                    Content: '{1} · {2}',
+                    ContentParams: [{1} = Who, {2} = Rev],
+                    Class: 'tr-change-who tr-block'
+                  )
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    snippetcall statusBar (Snippet: TraceOps.SNIPPET_StatusBar)
+  }
+}

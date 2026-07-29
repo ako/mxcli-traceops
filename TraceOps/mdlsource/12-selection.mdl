@@ -1,0 +1,130 @@
+/**
+ * TraceOps — row selection flags.
+ *
+ * A widget expression inside a ListView row can only reach that row's own object
+ * via $currentObject; an ancestor DataView's object (here the AppState
+ * singleton) is not addressable by name. So "is this the selected row?" cannot
+ * be expressed as a comparison against AppState from inside the row.
+ *
+ * Instead the selection is denormalised onto the rows themselves as IsSelected,
+ * which a DynamicClasses expression can read directly. Each select action clears
+ * only the currently-flagged row rather than rewriting the whole table.
+ */
+
+alter entity TraceOps.Requirement
+  add attribute IsSelected: boolean not null default false;
+
+alter entity TraceOps.AgentSession
+  add attribute IsSelected: boolean not null default false;
+
+alter entity TraceOps.ValidationItem
+  add attribute IsSelected: boolean not null default false;
+
+/**
+ * Selects a requirement — drives the detail pane and the trace lanes.
+ */
+create or replace microflow TraceOps.ACT_SelectRequirement ($Requirement: TraceOps.Requirement)
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  retrieve $Previous from TraceOps.Requirement where [IsSelected = true];
+  loop $Row in $Previous
+  begin
+    change $Row (IsSelected = false);
+    commit $Row;
+  end loop;
+
+  change $Requirement (IsSelected = true);
+  commit $Requirement;
+
+  $State = call microflow TraceOps.DS_AppState ();
+  change $State (SelectedReqId = $Requirement/ReqId);
+  commit $State;
+
+  return $Done;
+end;
+/
+
+/**
+ * Selects an agent session in the sessions console.
+ */
+create or replace microflow TraceOps.ACT_SelectSession ($Session: TraceOps.AgentSession)
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  retrieve $Previous from TraceOps.AgentSession where [IsSelected = true];
+  loop $Row in $Previous
+  begin
+    change $Row (IsSelected = false);
+    commit $Row;
+  end loop;
+
+  change $Session (IsSelected = true);
+  commit $Session;
+
+  $State = call microflow TraceOps.DS_AppState ();
+  change $State (SelectedSessionId = $Session/SessionId);
+  commit $State;
+
+  return $Done;
+end;
+/
+
+/**
+ * Selects an item in the validation queue.
+ */
+create or replace microflow TraceOps.ACT_SelectValidation ($Item: TraceOps.ValidationItem)
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  retrieve $Previous from TraceOps.ValidationItem where [IsSelected = true];
+  loop $Row in $Previous
+  begin
+    change $Row (IsSelected = false);
+    commit $Row;
+  end loop;
+
+  change $Item (IsSelected = true);
+  commit $Item;
+
+  $State = call microflow TraceOps.DS_AppState ();
+  change $State (SelectedValidationRef = $Item/RequirementRef);
+  commit $State;
+
+  return $Done;
+end;
+/
+
+/**
+ * Applies the initial selection recorded by the seed, so the prototype's opening
+ * state (MES-1-3 / CC-4471 / REQ-QMS-2-1-4) is reproduced on first load.
+ */
+create microflow TraceOps.ACT_ApplyInitialSelection ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  retrieve $Requirement from TraceOps.Requirement where [ReqId = 'MES-1-3'] limit 1;
+  if $Requirement != empty then
+    change $Requirement (IsSelected = true);
+    commit $Requirement;
+  end if;
+
+  retrieve $Session from TraceOps.AgentSession where [SessionId = 'CC-4471'] limit 1;
+  if $Session != empty then
+    change $Session (IsSelected = true);
+    commit $Session;
+  end if;
+
+  retrieve $Item from TraceOps.ValidationItem where [RequirementRef = 'REQ-QMS-2-1-4'] limit 1;
+  if $Item != empty then
+    change $Item (IsSelected = true);
+    commit $Item;
+  end if;
+
+  return $Done;
+end;
+/

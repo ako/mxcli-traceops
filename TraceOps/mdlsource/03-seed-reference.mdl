@@ -1,0 +1,380 @@
+/**
+ * TraceOps — reference data seed.
+ *
+ * Guardrails, ADRs, agent sessions, the validation queue, releases, baselines and
+ * the cockpit's KPI / risk / change-log content, transcribed from the design
+ * prototype so the app shows the same figures.
+ */
+
+-- MARK: Guardrails
+
+/**
+ * Seeds the 12 architecture guardrails (ARC-1 … ARC-12).
+ */
+create or replace microflow TraceOps.SEED_Guardrails ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  $g1 = create TraceOps.Guardrail (GuardrailId = 'ARC-1', Title = 'Explicit domain state machines',
+    Rule = 'Every lifecycle entity declares states and legal transitions in one table; no ad-hoc status strings.',
+    Category = TraceOps.GuardrailCategory.domain, RequirementCount = 41, ViolationCount = 0,
+    EnforcedBy = TraceOps.Enforcement.cirule, EnforcedLabel = 'CI rule', SortIndex = 1);
+  commit $g1;
+
+  $g2 = create TraceOps.Guardrail (GuardrailId = 'ARC-2', Title = 'Metrics computed server-side',
+    Rule = 'Charts and KPIs never derive business figures in the browser.',
+    Category = TraceOps.GuardrailCategory.analytics, RequirementCount = 36, ViolationCount = 2,
+    EnforcedBy = TraceOps.Enforcement.review, EnforcedLabel = 'review', SortIndex = 2);
+  commit $g2;
+
+  $g3 = create TraceOps.Guardrail (GuardrailId = 'ARC-3', Title = 'Idempotent integration boundaries',
+    Rule = 'All inbound ERP/PLM messages are keyed and replay-safe.',
+    Category = TraceOps.GuardrailCategory.integration, RequirementCount = 28, ViolationCount = 0,
+    EnforcedBy = TraceOps.Enforcement.cirule, EnforcedLabel = 'CI rule', SortIndex = 3);
+  commit $g3;
+
+  $g4 = create TraceOps.Guardrail (GuardrailId = 'ARC-4', Title = 'Plant is a hard isolation boundary',
+    Rule = 'No query may cross plant scope without an explicit grant.',
+    Category = TraceOps.GuardrailCategory.security, RequirementCount = 52, ViolationCount = 1,
+    EnforcedBy = TraceOps.Enforcement.cirule, EnforcedLabel = 'CI rule', SortIndex = 4);
+  commit $g4;
+
+  $g5 = create TraceOps.Guardrail (GuardrailId = 'ARC-5', Title = 'Sensitive data encrypted at rest and in transit',
+    Rule = 'Includes edge and terminal-local storage.',
+    Category = TraceOps.GuardrailCategory.security, RequirementCount = 47, ViolationCount = 3,
+    EnforcedBy = TraceOps.Enforcement.cirule, EnforcedLabel = 'CI rule', SortIndex = 5);
+  commit $g5;
+
+  $g6 = create TraceOps.Guardrail (GuardrailId = 'ARC-6', Title = 'Plant-level configuration over code branching',
+    Rule = 'Behaviour differences between plants are configuration, never forks.',
+    Category = TraceOps.GuardrailCategory.domain, RequirementCount = 33, ViolationCount = 1,
+    EnforcedBy = TraceOps.Enforcement.review, EnforcedLabel = 'review', SortIndex = 6);
+  commit $g6;
+
+  $g7 = create TraceOps.Guardrail (GuardrailId = 'ARC-7', Title = 'PLM is the master of part and BOM data',
+    Rule = 'MES never authors part master records.',
+    Category = TraceOps.GuardrailCategory.integration, RequirementCount = 19, ViolationCount = 0,
+    EnforcedBy = TraceOps.Enforcement.review, EnforcedLabel = 'review', SortIndex = 7);
+  commit $g7;
+
+  $g8 = create TraceOps.Guardrail (GuardrailId = 'ARC-8', Title = 'Event-driven over polling',
+    Rule = 'Machine and live data flow over the event stream; polling requires an ADR.',
+    Category = TraceOps.GuardrailCategory.platform, RequirementCount = 24, ViolationCount = 4,
+    EnforcedBy = TraceOps.Enforcement.cirule, EnforcedLabel = 'CI rule', SortIndex = 8);
+  commit $g8;
+
+  $g9 = create TraceOps.Guardrail (GuardrailId = 'ARC-9', Title = 'Everything auditable, append-only',
+    Rule = 'State changes emit immutable audit events with actor, time and reason.',
+    Category = TraceOps.GuardrailCategory.compliance, RequirementCount = 58, ViolationCount = 1,
+    EnforcedBy = TraceOps.Enforcement.cirule, EnforcedLabel = 'CI rule', SortIndex = 9);
+  commit $g9;
+
+  $g10 = create TraceOps.Guardrail (GuardrailId = 'ARC-10', Title = 'Stated performance budgets per surface',
+    Rule = 'Every interactive surface carries a measurable budget and a test that enforces it.',
+    Category = TraceOps.GuardrailCategory.platform, RequirementCount = 22, ViolationCount = 2,
+    EnforcedBy = TraceOps.Enforcement.perfgate, EnforcedLabel = 'perf gate', SortIndex = 10);
+  commit $g10;
+
+  $g11 = create TraceOps.Guardrail (GuardrailId = 'ARC-11', Title = 'Designed for gloves and noise',
+    Rule = 'Shop-floor surfaces meet the industrial interaction spec.',
+    Category = TraceOps.GuardrailCategory.ux, RequirementCount = 15, ViolationCount = 0,
+    EnforcedBy = TraceOps.Enforcement.review, EnforcedLabel = 'review', SortIndex = 11);
+  commit $g11;
+
+  $g12 = create TraceOps.Guardrail (GuardrailId = 'ARC-12', Title = 'One canonical definition per metric',
+    Rule = 'Semantic layer owns metric definitions; no local redefinition.',
+    Category = TraceOps.GuardrailCategory.analytics, RequirementCount = 11, ViolationCount = 1,
+    EnforcedBy = TraceOps.Enforcement.blocked, EnforcedLabel = 'blocked', SortIndex = 12);
+  commit $g12;
+
+  return $Done;
+end;
+/
+
+-- MARK: Architecture decisions
+
+/**
+ * Seeds the architecture decision records shown on the Guardrails view.
+ */
+create or replace microflow TraceOps.SEED_Adrs ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  $a1 = create TraceOps.Adr (AdrId = 'ADR-014', Title = 'Ownership of metric definitions (semantic layer)',
+    Status = TraceOps.AdrStatus.proposed, Meta = 'blocks ANA-3 · decision needed by 29 Jul', SortIndex = 1);
+  commit $a1;
+  $a2 = create TraceOps.Adr (AdrId = 'ADR-013', Title = 'Row-level security vs. schema-per-plant',
+    Status = TraceOps.AdrStatus.proposed, Meta = 'blocks PLT-3-1 · CC-4467 queued on it', SortIndex = 2);
+  commit $a2;
+  $a3 = create TraceOps.Adr (AdrId = 'ADR-011', Title = 'Offline-first terminal with local queue',
+    Status = TraceOps.AdrStatus.accepted, Meta = 'drives ARC-5, ARC-8 · 12 requirements', SortIndex = 3);
+  commit $a3;
+  $a4 = create TraceOps.Adr (AdrId = 'ADR-009', Title = 'Event stream (NATS) as machine-data backbone',
+    Status = TraceOps.AdrStatus.accepted, Meta = 'drives ARC-8 · 24 requirements', SortIndex = 4);
+  commit $a4;
+  $a5 = create TraceOps.Adr (AdrId = 'ADR-007', Title = 'Teamcenter is master for part and BOM',
+    Status = TraceOps.AdrStatus.accepted, Meta = 'drives ARC-7 · 19 requirements', SortIndex = 5);
+  commit $a5;
+  $a6 = create TraceOps.Adr (AdrId = 'ADR-004', Title = 'Append-only audit store with signed export',
+    Status = TraceOps.AdrStatus.accepted, Meta = 'drives ARC-9 · 58 requirements', SortIndex = 6);
+  commit $a6;
+  $a7 = create TraceOps.Adr (AdrId = 'ADR-002', Title = 'Superseded: per-plant code forks',
+    Status = TraceOps.AdrStatus.superseded, Meta = 'replaced by ADR-006 · see ARC-6', SortIndex = 7);
+  commit $a7;
+
+  return $Done;
+end;
+/
+
+-- MARK: Cockpit tiles
+
+/**
+ * Seeds the six cockpit KPI tiles.
+ */
+create or replace microflow TraceOps.SEED_Kpis ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  $k1 = create TraceOps.Kpi (Label = 'Requirements in baseline', Value = '1 248',
+    Sub = '+38 this week · 5 levels deep', Delta = '+3.1%', DeltaIsRed = false,
+    Tone = 'ink', BarBucket = 20, SortIndex = 1);
+  commit $k1;
+  $k2 = create TraceOps.Kpi (Label = 'Mapped to guardrails', Value = '92%',
+    Sub = '104 requirements unmapped', Delta = '+4', DeltaIsRed = false,
+    Tone = 'violet', BarBucket = 18, SortIndex = 2);
+  commit $k2;
+  $k3 = create TraceOps.Kpi (Label = 'Implemented', Value = '71%',
+    Sub = '362 requirements without artifacts', Delta = '+11', DeltaIsRed = false,
+    Tone = 'blue', BarBucket = 14, SortIndex = 3);
+  commit $k3;
+  $k4 = create TraceOps.Kpi (Label = 'Verified by test', Value = '58%',
+    Sub = 'evidence accepted by a human', Delta = '+7', DeltaIsRed = false,
+    Tone = 'green', BarBucket = 12, SortIndex = 4);
+  commit $k4;
+  $k5 = create TraceOps.Kpi (Label = 'Guardrail violations', Value = '15',
+    Sub = '4 block a release gate', Delta = '+2', DeltaIsRed = true,
+    Tone = 'red', BarBucket = 4, SortIndex = 5);
+  commit $k5;
+  $k6 = create TraceOps.Kpi (Label = 'Agent spend today', Value = '$318',
+    Sub = '9 sessions · 41 M tokens', Delta = '−12%', DeltaIsRed = false,
+    Tone = 'amber', BarBucket = 9, SortIndex = 6);
+  commit $k6;
+
+  return $Done;
+end;
+/
+
+/**
+ * Seeds the risks and open questions panel.
+ */
+create or replace microflow TraceOps.SEED_Risks ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  $x1 = create TraceOps.Risk (Severity = TraceOps.RiskSeverity.high, SeverityLabel = 'HIGH',
+    Title = 'Terminal offline buffer stores unencrypted data',
+    Meta = 'ARC-5 · REQ-MES-1-3-2 · owner J. Peters', SortIndex = 1);
+  commit $x1;
+  $x2 = create TraceOps.Risk (Severity = TraceOps.RiskSeverity.high, SeverityLabel = 'HIGH',
+    Title = 'Two conflicting FPY definitions in analytics layer',
+    Meta = 'ARC-12 · ANA-3-1 · needs ADR-014', SortIndex = 2);
+  commit $x2;
+  $x3 = create TraceOps.Risk (Severity = TraceOps.RiskSeverity.med, SeverityLabel = 'MED',
+    Title = 'OPC UA reconnect unresolved after 3 agent attempts',
+    Meta = 'EDG-1-1 · CC-4465 failed · escalated', SortIndex = 3);
+  commit $x3;
+  $x4 = create TraceOps.Risk (Severity = TraceOps.RiskSeverity.med, SeverityLabel = 'MED',
+    Title = 'NC auto-raise latency p95 6.1 s vs 5 s requirement',
+    Meta = 'REQ-QMS-2-1-4 · in validation', SortIndex = 4);
+  commit $x4;
+  $x5 = create TraceOps.Risk (Severity = TraceOps.RiskSeverity.med, SeverityLabel = 'MED',
+    Title = '104 requirements still unmapped to any guardrail',
+    Meta = 'mostly EDG-3 and PLM-3 · needs architect pass', SortIndex = 5);
+  commit $x5;
+  $x6 = create TraceOps.Risk (Severity = TraceOps.RiskSeverity.open, SeverityLabel = 'OPEN',
+    Title = 'Is e-signature in scope for 4.2 or deferred?',
+    Meta = 'QMS-3-3 · question to R. Visser', SortIndex = 6);
+  commit $x6;
+  $x7 = create TraceOps.Risk (Severity = TraceOps.RiskSeverity.open, SeverityLabel = 'OPEN',
+    Title = 'Confirmation reversal window: shift or 24h?',
+    Meta = 'REQ-MES-1-3-3 · question to plant ops', SortIndex = 7);
+  commit $x7;
+
+  return $Done;
+end;
+/
+
+/**
+ * Seeds the requirement change log (last 24h).
+ */
+create or replace microflow TraceOps.SEED_Changes ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  $c1 = create TraceOps.ChangeEntry (TimeLabel = '14:02', RequirementRef = 'REQ-MES-1-3-2',
+    Text = 'acceptance criteria tightened: replay must preserve order',
+    Who = 'M. Koelewijn', Rev = 'rev 7', SortIndex = 1);
+  commit $c1;
+  $c2 = create TraceOps.ChangeEntry (TimeLabel = '13:41', RequirementRef = 'ANA-3-1',
+    Text = 'status → blocked, linked to ADR-014', Who = 'K. Smit', Rev = 'rev 3', SortIndex = 2);
+  commit $c2;
+  $c3 = create TraceOps.ChangeEntry (TimeLabel = '12:15', RequirementRef = 'REQ-QMS-2-1-3',
+    Text = 'guardrail ARC-8 added, ARC-10 budget set to 1 Hz × 12',
+    Who = 'M. Koelewijn', Rev = 'rev 4', SortIndex = 3);
+  commit $c3;
+  $c4 = create TraceOps.ChangeEntry (TimeLabel = '11:38', RequirementRef = 'EDG-2-2',
+    Text = 'new requirement: buffer encrypted at rest on gateway',
+    Who = 'M. Koelewijn', Rev = 'rev 1', SortIndex = 4);
+  commit $c4;
+  $c5 = create TraceOps.ChangeEntry (TimeLabel = '10:52', RequirementRef = 'MES-1-4',
+    Text = 'moved to release 4.3, capacity warning descoped',
+    Who = 'L. Haan', Rev = 'rev 9', SortIndex = 5);
+  commit $c5;
+  $c6 = create TraceOps.ChangeEntry (TimeLabel = '09:20', RequirementRef = 'PLT-3-2',
+    Text = 'owner set, cross-plant grant model clarified',
+    Who = 'A. Devos', Rev = 'rev 2', SortIndex = 6);
+  commit $c6;
+
+  return $Done;
+end;
+/
+
+-- MARK: Releases and baselines
+
+/**
+ * Seeds the release trains, their stat chips and the baseline history.
+ */
+create or replace microflow TraceOps.SEED_Releases ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  $rel1 = create TraceOps.Release (ReleaseId = '4.2-RC3', Name = 'Industrial Suite 4.2 — release candidate',
+    DateLabel = 'code freeze 14 Aug', Status = TraceOps.ReleaseStatus.atrisk, StatusLabel = 'at risk',
+    PercentLabel = '71%', VerifiedBucket = 14, BuiltBucket = 3, DevBucket = 2,
+    Blocker = 'Blocked by 9 guardrail violations and 2 failing perf budgets',
+    BlockerIsRed = true, SortIndex = 1);
+  commit $rel1;
+  $s11 = create TraceOps.ReleaseStat (StatKey = 'Reqs', StatValue = '412', Tone = 'mute', SortIndex = 1);
+  set $s11/TraceOps.ReleaseStat_Release = $rel1;
+  commit $s11;
+  $s12 = create TraceOps.ReleaseStat (StatKey = 'Verified', StatValue = '292', Tone = 'green', SortIndex = 2);
+  set $s12/TraceOps.ReleaseStat_Release = $rel1;
+  commit $s12;
+  $s13 = create TraceOps.ReleaseStat (StatKey = 'Built', StatValue = '66', Tone = 'blue', SortIndex = 3);
+  set $s13/TraceOps.ReleaseStat_Release = $rel1;
+  commit $s13;
+  $s14 = create TraceOps.ReleaseStat (StatKey = 'In session', StatValue = '33', Tone = 'amber', SortIndex = 4);
+  set $s14/TraceOps.ReleaseStat_Release = $rel1;
+  commit $s14;
+  $s15 = create TraceOps.ReleaseStat (StatKey = 'Violations', StatValue = '9', Tone = 'red', SortIndex = 5);
+  set $s15/TraceOps.ReleaseStat_Release = $rel1;
+  commit $s15;
+  $s16 = create TraceOps.ReleaseStat (StatKey = 'Unmapped', StatValue = '12', Tone = 'amber', SortIndex = 6);
+  set $s16/TraceOps.ReleaseStat_Release = $rel1;
+  commit $s16;
+
+  $rel2 = create TraceOps.Release (ReleaseId = '4.2.1', Name = 'Quality hardening patch',
+    DateLabel = 'planned 4 Sep', Status = TraceOps.ReleaseStatus.ontrack, StatusLabel = 'on track',
+    PercentLabel = '34%', VerifiedBucket = 7, BuiltBucket = 4, DevBucket = 2,
+    Blocker = 'No blockers · 2 open questions with plant ops',
+    BlockerIsRed = false, SortIndex = 2);
+  commit $rel2;
+  $s21 = create TraceOps.ReleaseStat (StatKey = 'Reqs', StatValue = '118', Tone = 'mute', SortIndex = 1);
+  set $s21/TraceOps.ReleaseStat_Release = $rel2;
+  commit $s21;
+  $s22 = create TraceOps.ReleaseStat (StatKey = 'Verified', StatValue = '40', Tone = 'green', SortIndex = 2);
+  set $s22/TraceOps.ReleaseStat_Release = $rel2;
+  commit $s22;
+  $s23 = create TraceOps.ReleaseStat (StatKey = 'Built', StatValue = '26', Tone = 'blue', SortIndex = 3);
+  set $s23/TraceOps.ReleaseStat_Release = $rel2;
+  commit $s23;
+  $s24 = create TraceOps.ReleaseStat (StatKey = 'In session', StatValue = '13', Tone = 'amber', SortIndex = 4);
+  set $s24/TraceOps.ReleaseStat_Release = $rel2;
+  commit $s24;
+  $s25 = create TraceOps.ReleaseStat (StatKey = 'Violations', StatValue = '2', Tone = 'amber', SortIndex = 5);
+  set $s25/TraceOps.ReleaseStat_Release = $rel2;
+  commit $s25;
+  $s26 = create TraceOps.ReleaseStat (StatKey = 'Unmapped', StatValue = '0', Tone = 'green', SortIndex = 6);
+  set $s26/TraceOps.ReleaseStat_Release = $rel2;
+  commit $s26;
+
+  $rel3 = create TraceOps.Release (ReleaseId = '4.3', Name = 'Scheduling & OEE analytics',
+    DateLabel = 'planned Q4', Status = TraceOps.ReleaseStatus.planning, StatusLabel = 'planning',
+    PercentLabel = '6%', VerifiedBucket = 1, BuiltBucket = 1, DevBucket = 1,
+    Blocker = '74 requirements not yet mapped to guardrails',
+    BlockerIsRed = false, SortIndex = 3);
+  commit $rel3;
+  $s31 = create TraceOps.ReleaseStat (StatKey = 'Reqs', StatValue = '386', Tone = 'mute', SortIndex = 1);
+  set $s31/TraceOps.ReleaseStat_Release = $rel3;
+  commit $s31;
+  $s32 = create TraceOps.ReleaseStat (StatKey = 'Verified', StatValue = '23', Tone = 'green', SortIndex = 2);
+  set $s32/TraceOps.ReleaseStat_Release = $rel3;
+  commit $s32;
+  $s33 = create TraceOps.ReleaseStat (StatKey = 'Built', StatValue = '15', Tone = 'blue', SortIndex = 3);
+  set $s33/TraceOps.ReleaseStat_Release = $rel3;
+  commit $s33;
+  $s34 = create TraceOps.ReleaseStat (StatKey = 'In session', StatValue = '11', Tone = 'amber', SortIndex = 4);
+  set $s34/TraceOps.ReleaseStat_Release = $rel3;
+  commit $s34;
+  $s35 = create TraceOps.ReleaseStat (StatKey = 'Violations', StatValue = '1', Tone = 'amber', SortIndex = 5);
+  set $s35/TraceOps.ReleaseStat_Release = $rel3;
+  commit $s35;
+  $s36 = create TraceOps.ReleaseStat (StatKey = 'Unmapped', StatValue = '74', Tone = 'red', SortIndex = 6);
+  set $s36/TraceOps.ReleaseStat_Release = $rel3;
+  commit $s36;
+
+  $rel4 = create TraceOps.Release (ReleaseId = '4.4', Name = 'Edge normalisation & multi-plant reporting',
+    DateLabel = 'unscheduled', Status = TraceOps.ReleaseStatus.intake, StatusLabel = 'intake',
+    PercentLabel = '0%', VerifiedBucket = 0, BuiltBucket = 0, DevBucket = 0,
+    Blocker = 'Intake only · awaiting ADR-014 and ADR-013',
+    BlockerIsRed = false, SortIndex = 4);
+  commit $rel4;
+  $s41 = create TraceOps.ReleaseStat (StatKey = 'Reqs', StatValue = '332', Tone = 'mute', SortIndex = 1);
+  set $s41/TraceOps.ReleaseStat_Release = $rel4;
+  commit $s41;
+  $s42 = create TraceOps.ReleaseStat (StatKey = 'Verified', StatValue = '0', Tone = 'dim', SortIndex = 2);
+  set $s42/TraceOps.ReleaseStat_Release = $rel4;
+  commit $s42;
+  $s43 = create TraceOps.ReleaseStat (StatKey = 'Built', StatValue = '0', Tone = 'dim', SortIndex = 3);
+  set $s43/TraceOps.ReleaseStat_Release = $rel4;
+  commit $s43;
+  $s44 = create TraceOps.ReleaseStat (StatKey = 'In session', StatValue = '6', Tone = 'amber', SortIndex = 4);
+  set $s44/TraceOps.ReleaseStat_Release = $rel4;
+  commit $s44;
+  $s45 = create TraceOps.ReleaseStat (StatKey = 'Violations', StatValue = '3', Tone = 'amber', SortIndex = 5);
+  set $s45/TraceOps.ReleaseStat_Release = $rel4;
+  commit $s45;
+  $s46 = create TraceOps.ReleaseStat (StatKey = 'Unmapped', StatValue = '188', Tone = 'red', SortIndex = 6);
+  set $s46/TraceOps.ReleaseStat_Release = $rel4;
+  commit $s46;
+
+  $b1 = create TraceOps.Baseline (Tag = '4.2-RC3', DateLabel = '22 Jul',
+    Note = 'SPC alarm auto-raise and BOM effectivity accepted',
+    Delta = '+38 reqs · +14 verified', State = 'current', IsCurrent = true, SortIndex = 1);
+  commit $b1;
+  $b2 = create TraceOps.Baseline (Tag = '4.2-RC2', DateLabel = '08 Jul',
+    Note = 'Offline terminal buffering scoped in after plant workshop',
+    Delta = '+61 reqs · +22 verified', State = 'superseded', IsCurrent = false, SortIndex = 2);
+  commit $b2;
+  $b3 = create TraceOps.Baseline (Tag = '4.2-RC1', DateLabel = '17 Jun',
+    Note = 'First candidate; audit trail and identity verified',
+    Delta = '+104 reqs · +48 verified', State = 'superseded', IsCurrent = false, SortIndex = 3);
+  commit $b3;
+  $b4 = create TraceOps.Baseline (Tag = '4.2-B2', DateLabel = '28 May',
+    Note = 'Guardrail set frozen at 12 principles',
+    Delta = '+9 guardrails', State = 'superseded', IsCurrent = false, SortIndex = 4);
+  commit $b4;
+  $b5 = create TraceOps.Baseline (Tag = '4.2-B1', DateLabel = '06 May',
+    Note = 'Initial requirement intake from MES and QMS discovery',
+    Delta = '+734 reqs', State = 'superseded', IsCurrent = false, SortIndex = 5);
+  commit $b5;
+
+  return $Done;
+end;
+/

@@ -1,0 +1,415 @@
+/**
+ * TraceOps — application logic.
+ *
+ * Seed orchestration (guarded to run once at startup) plus the interaction
+ * microflows that reproduce the prototype's component state: tree expand /
+ * collapse, filter chips, layout toggle and the three selections.
+ */
+
+-- MARK: Application state
+
+/**
+ * Returns the singleton AppState, creating it on first use.
+ *
+ * Used as the datasource of every page's outer DataView, so all views share one
+ * selection/filter state exactly as the prototype's component state does.
+ */
+create microflow TraceOps.DS_AppState ()
+returns TraceOps.AppState as $State
+begin
+  retrieve $Existing from TraceOps.AppState limit 1;
+
+  if $Existing = empty then
+    $State = create TraceOps.AppState (TreeLayout = 'a');
+    commit $State;
+    return $State;
+  end if;
+
+  return $Existing;
+end;
+/
+
+/**
+ * Recomputes IsVisible and CaretLabel for every requirement row.
+ *
+ * Runs in a single pass over the tree in SortIndex (depth-first) order, so a
+ * node's parent has always been processed before the node itself and its
+ * resolved IsVisible can simply be read. A row is visible when every ancestor is
+ * expanded and — mirroring the prototype — when it either has children (parents
+ * are never filtered away) or passes the active filter chips.
+ */
+create microflow TraceOps.ACT_ApplyTreeState ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+  declare $Shown Integer = 0;
+
+  $State = call microflow TraceOps.DS_AppState ();
+
+  retrieve $All from TraceOps.Requirement sort by TraceOps.Requirement.SortIndex asc;
+
+  loop $Row in $All
+  begin
+    retrieve $Parent from $Row/TraceOps.Requirement_Parent;
+
+    if $Parent = empty then
+      change $Row (IsVisible = true);
+    else
+      change $Row (IsVisible = $Parent/IsExpanded and $Parent/IsVisible);
+    end if;
+
+    if $Row/IsVisible and not($Row/HasChildren) then
+      if $State/FilterNoImpl and $Row/RollArtifacts > 0 then
+        change $Row (IsVisible = false);
+      end if;
+      if $State/FilterNoTest and not(($Row/RollTestsPassed = 0 and $Row/RollArtifacts > 0) or $Row/RollTestsFailed > 0) then
+        change $Row (IsVisible = false);
+      end if;
+      if $State/FilterViolations and $Row/RollViolations = 0 then
+        change $Row (IsVisible = false);
+      end if;
+      if $State/FilterMine and $Row/OwnerName != 'M. Koelewijn' then
+        change $Row (IsVisible = false);
+      end if;
+    end if;
+
+    if $Row/HasChildren then
+      if $Row/IsExpanded then
+        change $Row (CaretLabel = '▼');
+      else
+        change $Row (CaretLabel = '▶');
+      end if;
+    else
+      change $Row (CaretLabel = '');
+    end if;
+
+    if $Row/IsVisible then
+      set $Shown = $Shown + 1;
+    end if;
+
+    commit $Row;
+  end loop;
+
+  change $State (VisibleRowCount = $Shown);
+  commit $State;
+
+  return $Done;
+end;
+/
+
+-- MARK: Tree interaction
+
+/**
+ * Expands or collapses one requirement and reapplies visibility.
+ */
+create microflow TraceOps.ACT_ToggleRequirement ($Requirement: TraceOps.Requirement)
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  change $Requirement (IsExpanded = not($Requirement/IsExpanded));
+  commit $Requirement;
+
+  $Applied = call microflow TraceOps.ACT_ApplyTreeState ();
+
+  return $Done;
+end;
+/
+
+/**
+ * Selects a requirement — drives the detail pane and the trace lanes.
+ */
+create microflow TraceOps.ACT_SelectRequirement ($Requirement: TraceOps.Requirement)
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  $State = call microflow TraceOps.DS_AppState ();
+  change $State (SelectedReqId = $Requirement/ReqId);
+  commit $State;
+
+  return $Done;
+end;
+/
+
+/**
+ * Collapses the whole tree.
+ */
+create microflow TraceOps.ACT_CollapseAll ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  retrieve $All from TraceOps.Requirement;
+  loop $Row in $All
+  begin
+    change $Row (IsExpanded = false);
+    commit $Row;
+  end loop;
+
+  $Applied = call microflow TraceOps.ACT_ApplyTreeState ();
+
+  return $Done;
+end;
+/
+
+/**
+ * Expands every requirement that has children.
+ */
+create microflow TraceOps.ACT_ExpandAll ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  retrieve $All from TraceOps.Requirement where [HasChildren = true];
+  loop $Row in $All
+  begin
+    change $Row (IsExpanded = true);
+    commit $Row;
+  end loop;
+
+  $Applied = call microflow TraceOps.ACT_ApplyTreeState ();
+
+  return $Done;
+end;
+/
+
+-- MARK: Filter chips
+
+/**
+ * Toggles the "No implementation" filter chip.
+ */
+create microflow TraceOps.ACT_FilterNoImpl ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+  $State = call microflow TraceOps.DS_AppState ();
+  change $State (FilterNoImpl = not($State/FilterNoImpl));
+  commit $State;
+  $Applied = call microflow TraceOps.ACT_ApplyTreeState ();
+  return $Done;
+end;
+/
+
+/**
+ * Toggles the "No passing test" filter chip.
+ */
+create microflow TraceOps.ACT_FilterNoTest ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+  $State = call microflow TraceOps.DS_AppState ();
+  change $State (FilterNoTest = not($State/FilterNoTest));
+  commit $State;
+  $Applied = call microflow TraceOps.ACT_ApplyTreeState ();
+  return $Done;
+end;
+/
+
+/**
+ * Toggles the "Violations" filter chip.
+ */
+create microflow TraceOps.ACT_FilterViolations ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+  $State = call microflow TraceOps.DS_AppState ();
+  change $State (FilterViolations = not($State/FilterViolations));
+  commit $State;
+  $Applied = call microflow TraceOps.ACT_ApplyTreeState ();
+  return $Done;
+end;
+/
+
+/**
+ * Toggles the "My requirements" filter chip.
+ */
+create microflow TraceOps.ACT_FilterMine ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+  $State = call microflow TraceOps.DS_AppState ();
+  change $State (FilterMine = not($State/FilterMine));
+  commit $State;
+  $Applied = call microflow TraceOps.ACT_ApplyTreeState ();
+  return $Done;
+end;
+/
+
+/**
+ * Switches the traceability tree to layout 1a (inline badge matrix).
+ */
+create microflow TraceOps.ACT_LayoutA ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+  $State = call microflow TraceOps.DS_AppState ();
+  change $State (TreeLayout = 'a');
+  commit $State;
+  return $Done;
+end;
+/
+
+/**
+ * Switches the traceability tree to layout 1b (tree + trace lanes).
+ */
+create microflow TraceOps.ACT_LayoutB ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+  $State = call microflow TraceOps.DS_AppState ();
+  change $State (TreeLayout = 'b');
+  commit $State;
+  return $Done;
+end;
+/
+
+-- MARK: Other selections
+
+/**
+ * Selects an agent session in the sessions console.
+ */
+create microflow TraceOps.ACT_SelectSession ($Session: TraceOps.AgentSession)
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+  $State = call microflow TraceOps.DS_AppState ();
+  change $State (SelectedSessionId = $Session/SessionId);
+  commit $State;
+  return $Done;
+end;
+/
+
+/**
+ * Selects an item in the validation queue.
+ */
+create microflow TraceOps.ACT_SelectValidation ($Item: TraceOps.ValidationItem)
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+  $State = call microflow TraceOps.DS_AppState ();
+  change $State (SelectedValidationRef = $Item/RequirementRef);
+  commit $State;
+  return $Done;
+end;
+/
+
+-- MARK: Datasources for the selected objects
+
+/**
+ * The currently selected requirement, for the detail pane and trace lanes.
+ */
+create microflow TraceOps.DS_SelectedRequirement ()
+returns TraceOps.Requirement as $Selected
+begin
+  $State = call microflow TraceOps.DS_AppState ();
+
+  retrieve $Match from TraceOps.Requirement where [ReqId = $State/SelectedReqId] limit 1;
+
+  if $Match = empty then
+    retrieve $First from TraceOps.Requirement sort by TraceOps.Requirement.SortIndex asc limit 1;
+    return $First;
+  end if;
+
+  return $Match;
+end;
+/
+
+/**
+ * The currently selected agent session.
+ */
+create microflow TraceOps.DS_SelectedSession ()
+returns TraceOps.AgentSession as $Selected
+begin
+  $State = call microflow TraceOps.DS_AppState ();
+
+  retrieve $Match from TraceOps.AgentSession where [SessionId = $State/SelectedSessionId] limit 1;
+
+  if $Match = empty then
+    retrieve $First from TraceOps.AgentSession sort by TraceOps.AgentSession.SortIndex asc limit 1;
+    return $First;
+  end if;
+
+  return $Match;
+end;
+/
+
+/**
+ * The currently selected validation-queue item.
+ */
+create microflow TraceOps.DS_SelectedValidation ()
+returns TraceOps.ValidationItem as $Selected
+begin
+  $State = call microflow TraceOps.DS_AppState ();
+
+  retrieve $Match from TraceOps.ValidationItem where [RequirementRef = $State/SelectedValidationRef] limit 1;
+
+  if $Match = empty then
+    retrieve $First from TraceOps.ValidationItem sort by TraceOps.ValidationItem.SortIndex asc limit 1;
+    return $First;
+  end if;
+
+  return $Match;
+end;
+/
+
+-- MARK: Startup
+
+/**
+ * After-startup entry point.
+ *
+ * Guarded so the demo dataset is created exactly once: if any requirement
+ * already exists the flow returns immediately, which keeps a container restart
+ * (or a hot model reload) from duplicating rows.
+ */
+create microflow TraceOps.ACT_Startup ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  retrieve $Existing from TraceOps.Requirement limit 1;
+
+  if $Existing != empty then
+    log info node 'TraceOps' 'Seed data already present — skipping.';
+    return $Done;
+  end if;
+
+  log info node 'TraceOps' 'Seeding TraceOps demo data...';
+
+  $Guardrails = call microflow TraceOps.SEED_Guardrails ();
+  $Adrs       = call microflow TraceOps.SEED_Adrs ();
+  $Kpis       = call microflow TraceOps.SEED_Kpis ();
+  $Risks      = call microflow TraceOps.SEED_Risks ();
+  $Changes    = call microflow TraceOps.SEED_Changes ();
+  $Releases   = call microflow TraceOps.SEED_Releases ();
+  $Sessions   = call microflow TraceOps.SEED_Sessions ();
+  $Queue      = call microflow TraceOps.SEED_ValidationQueue ();
+
+  $TreeMES = call microflow TraceOps.SEED_Tree_MES ();
+  $TreeQMS = call microflow TraceOps.SEED_Tree_QMS ();
+  $TreePLM = call microflow TraceOps.SEED_Tree_PLM ();
+  $TreeANA = call microflow TraceOps.SEED_Tree_ANA ();
+  $TreePLT = call microflow TraceOps.SEED_Tree_PLT ();
+  $TreeEDG = call microflow TraceOps.SEED_Tree_EDG ();
+
+  $State = call microflow TraceOps.DS_AppState ();
+  change $State (
+    SelectedReqId = 'MES-1-3',
+    SelectedSessionId = 'CC-4471',
+    SelectedValidationRef = 'REQ-QMS-2-1-4',
+    LiveSessions = 2,
+    AwaitingValidation = 23,
+    GuardrailViolations = 15
+  );
+  commit $State;
+
+  $Applied = call microflow TraceOps.ACT_ApplyTreeState ();
+  $Selected = call microflow TraceOps.ACT_ApplyInitialSelection ();
+
+  log info node 'TraceOps' 'TraceOps demo data seeded.';
+
+  return $Done;
+end;
+/
+
+alter settings model AfterStartupMicroflow = 'TraceOps.ACT_Startup';

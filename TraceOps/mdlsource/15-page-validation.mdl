@@ -1,0 +1,198 @@
+/**
+ * TraceOps — Validation queue.
+ *
+ * The human gate: a queue of agent-produced evidence bundles on the left, and
+ * the selected item's acceptance criteria, guardrail checks, tests, test log,
+ * changed files and diff snippet on the right.
+ */
+create or replace page TraceOps.ValidationQueue (
+  Title: 'Validation queue',
+  Layout: Atlas_Core.Atlas_TopBar,
+  url: 'validation'
+)
+{
+  container app (Class: 'tr-app') {
+
+    snippetcall topBar (Snippet: TraceOps.SNIPPET_TopBar)
+
+    container appBody (Class: 'tr-body') {
+      snippetcall sideBar (Snippet: TraceOps.SNIPPET_Sidebar)
+
+      container mainContent (Class: 'tr-content') {
+
+        container toolbar (Class: 'tr-toolbar') {
+          dynamictext tbTitle (Content: 'Validation queue', Class: 'tr-view-title')
+          dynamictext tbSub (Content: 'confirm the evidence genuinely proves the requirement', Class: 'tr-view-sub')
+          container tbSpacer (Class: 'tr-spacer') { dynamictext tbs (Content: ' ') }
+          dynamictext tbCount (Content: '23 awaiting your validation', Class: 'tr-view-sub')
+        }
+
+        container valGrid (Class: 'tr-val-grid tr-fill') {
+
+          container queuePanel (Class: 'tr-panel tr-fill') {
+            container qHead (Class: 'tr-panel-head') {
+              dynamictext qTitle (Content: 'Awaiting validation', Class: 'tr-panel-title')
+              dynamictext qCount (Content: '8', Class: 'tr-panel-count tr-panel-count--amber')
+              container qSpacer (Class: 'tr-spacer') { dynamictext qs (Content: ' ') }
+              dynamictext qHint (Content: 'oldest first', Class: 'tr-panel-hint')
+            }
+            listview lvQueue (
+              DataSource: database from TraceOps.ValidationItem sort by SortIndex asc,
+              Class: 'tr-panel-body tr-fill tr-lv'
+            ) {
+              container qRow (
+                OnClick: microflow TraceOps.ACT_SelectValidation(Item: $currentObject),
+                Class: 'tr-val-row',
+                DynamicClasses: 'if $currentObject/IsSelected then ''tr-val-row--sel'' else '''''
+              ) {
+                container qTop (Class: 'tr-val-top') {
+                  dynamictext qReq (Content: '{1}', ContentParams: [{1} = RequirementRef], Class: 'tr-val-req')
+                  dynamictext qFlag (
+                    Content: '{1}', ContentParams: [{1} = Flag],
+                    Class: 'tr-flag',
+                    DynamicClasses: 'if $currentObject/FlagIsGreen then ''tr-flag--green'' else if $currentObject/FlagIsFail then ''tr-flag--fail'' else ''tr-flag--warn'''
+                  )
+                  container qSp (Class: 'tr-spacer') { dynamictext qsp (Content: ' ') }
+                  dynamictext qAge (Content: '{1}', ContentParams: [{1} = Age], Class: 'tr-val-age')
+                }
+                dynamictext qTitleTxt (Content: '{1}', ContentParams: [{1} = Title], Class: 'tr-val-title tr-block')
+                dynamictext qMeta (Content: '{1}', ContentParams: [{1} = Meta], Class: 'tr-meta tr-block')
+              }
+            }
+          }
+
+          container evidenceStack (Class: 'tr-stack-sm') {
+
+            dataview dvVal (DataSource: microflow TraceOps.DS_SelectedValidation, Class: 'tr-panel') {
+              container vHead (Class: 'tr-detail-head') {
+                container vTop (Class: 'tr-row-flex') {
+                  dynamictext vReq (Content: '{1}', ContentParams: [{1} = RequirementRef], Class: 'tr-val-req')
+                  dynamictext vFlag (
+                    Content: '{1}', ContentParams: [{1} = Flag],
+                    Class: 'tr-flag',
+                    DynamicClasses: 'if $currentObject/FlagIsGreen then ''tr-flag--green'' else if $currentObject/FlagIsFail then ''tr-flag--fail'' else ''tr-flag--warn'''
+                  )
+                  dynamictext vSess (Content: '{1}', ContentParams: [{1} = SessionRef], Class: 'tr-sess-id')
+                }
+                dynamictext vTitle (Content: '{1}', ContentParams: [{1} = Title], Class: 'tr-detail-title tr-block')
+                dynamictext vDesc (Content: '{1}', ContentParams: [{1} = Description], Class: 'tr-detail-desc tr-block')
+              }
+              container vActions (Class: 'tr-actions') {
+                container approveBtn (OnClick: microflow TraceOps.ACT_GoTrace, Class: 'tr-btn-approve') {
+                  dynamictext approveTxt (Content: '✓ Accept evidence')
+                }
+                container rejectBtn (OnClick: microflow TraceOps.ACT_GoSessions, Class: 'tr-btn-reject') {
+                  dynamictext rejectTxt (Content: '✗ Send back to agent')
+                }
+              }
+            }
+
+            container critPanel (Class: 'tr-panel') {
+              container cHead (Class: 'tr-panel-head') {
+                dynamictext cTitle (Content: 'Acceptance criteria', Class: 'tr-panel-title')
+              }
+              listview lvCrit (DataSource: microflow TraceOps.DS_ValCriteria, Class: 'tr-lv') {
+                container cRow (Class: 'tr-check-row') {
+                  dynamictext cIcon (
+                    Content: '●',
+                    Class: 'tr-check-icon',
+                    DynamicClasses: '''tr-check-icon--'' + toString($currentObject/Result)'
+                  )
+                  dynamictext cText (Content: '{1}', ContentParams: [{1} = Text], Class: 'tr-check-text')
+                  dynamictext cTag (Content: '{1}', ContentParams: [{1} = Tag], Class: 'tr-check-tag')
+                }
+              }
+            }
+
+            container gcPanel (Class: 'tr-panel') {
+              container gcHead (Class: 'tr-panel-head') {
+                dynamictext gcTitle (Content: 'Guardrail checks', Class: 'tr-panel-title')
+              }
+              listview lvGc (DataSource: microflow TraceOps.DS_ValGuardrails, Class: 'tr-lv') {
+                container gcRow (Class: 'tr-check-row') {
+                  dynamictext gcIcon (
+                    Content: '●',
+                    Class: 'tr-check-icon',
+                    DynamicClasses: '''tr-check-icon--'' + toString($currentObject/Result)'
+                  )
+                  dynamictext gcText (
+                    Content: '{1} · {2}',
+                    ContentParams: [{1} = RefId, {2} = Text],
+                    Class: 'tr-check-text'
+                  )
+                  dynamictext gcTag (Content: '{1}', ContentParams: [{1} = Tag], Class: 'tr-check-tag')
+                }
+              }
+            }
+
+            container testPanel (Class: 'tr-panel') {
+              container tHead (Class: 'tr-panel-head') {
+                dynamictext tTitle (Content: 'Tests', Class: 'tr-panel-title')
+                container tSpacer (Class: 'tr-spacer') { dynamictext ts (Content: ' ') }
+                dataview dvTestSummary (DataSource: microflow TraceOps.DS_SelectedValidation) {
+                  dynamictext tSummary (
+                    Content: '{1}', ContentParams: [{1} = TestSummary],
+                    Class: 'tr-panel-count',
+                    DynamicClasses: 'if $currentObject/FlagIsFail then ''tr-panel-count--red'' else '''''
+                  )
+                }
+              }
+              listview lvTests (DataSource: microflow TraceOps.DS_ValTests, Class: 'tr-lv') {
+                container tRow (Class: 'tr-check-row') {
+                  dynamictext tIcon (
+                    Content: '●',
+                    Class: 'tr-check-icon',
+                    DynamicClasses: '''tr-check-icon--'' + toString($currentObject/Result)'
+                  )
+                  dynamictext tText (
+                    Content: '{1} · {2}',
+                    ContentParams: [{1} = RefId, {2} = Text],
+                    Class: 'tr-check-text'
+                  )
+                  dynamictext tTag (Content: '{1}', ContentParams: [{1} = Tag], Class: 'tr-check-tag')
+                }
+              }
+              listview lvTestLog (DataSource: microflow TraceOps.DS_ValTestLog, Class: 'tr-log tr-lv') {
+                dynamictext tlLine (
+                  Content: '{1}', ContentParams: [{1} = Text],
+                  Class: 'tr-log-line',
+                  DynamicClasses: '''tr-log-line--'' + $currentObject/Tone'
+                )
+              }
+            }
+
+            container diffPanel (Class: 'tr-panel') {
+              container dHead (Class: 'tr-panel-head') {
+                dynamictext dTitle (Content: 'Changed files', Class: 'tr-panel-title')
+              }
+              listview lvDiff (DataSource: microflow TraceOps.DS_ValDiff, Class: 'tr-lv') {
+                container dRow (Class: 'tr-file-row') {
+                  dynamictext dPath (Content: '{1}', ContentParams: [{1} = Text], Class: 'tr-file-path')
+                  dynamictext dDiff (
+                    Content: '{1}', ContentParams: [{1} = Tag],
+                    Class: 'tr-file-diff',
+                    DynamicClasses: 'if $currentObject/RefId = ''new'' then ''tr-file-diff--new'' else '''''
+                  )
+                  dynamictext dSt (
+                    Content: '{1}', ContentParams: [{1} = RefId],
+                    Class: 'tr-file-st',
+                    DynamicClasses: 'if $currentObject/RefId = ''new'' then ''tr-file-st--new'' else ''tr-file-st--modified'''
+                  )
+                }
+              }
+              listview lvDiffSnippet (DataSource: microflow TraceOps.DS_ValDiffSnippet, Class: 'tr-log tr-lv') {
+                dynamictext dsLine (
+                  Content: '{1}', ContentParams: [{1} = Text],
+                  Class: 'tr-log-line',
+                  DynamicClasses: '''tr-log-line--'' + $currentObject/Tone'
+                )
+              }
+            }
+          }
+        }
+      }
+    }
+
+    snippetcall statusBar (Snippet: TraceOps.SNIPPET_StatusBar)
+  }
+}

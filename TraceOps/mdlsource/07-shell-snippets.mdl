@@ -1,0 +1,215 @@
+/**
+ * TraceOps — application shell.
+ *
+ * The prototype's chrome carries live data (running-session count, per-area
+ * health bars), which the Atlas navigation model and CSS pseudo-elements cannot
+ * render. So the Atlas topbar/sidebar regions are hidden in the theme and the
+ * shell is rebuilt here as three snippets shared by every page.
+ */
+
+-- MARK: Top bar
+
+/**
+ * The 42px top bar: brand, program selector, live counters and baseline chip.
+ */
+create or replace snippet TraceOps.SNIPPET_TopBar
+{
+  dataview dvTop (DataSource: microflow TraceOps.DS_AppState, Class: 'tr-topbar') {
+
+    container brand (Class: 'tr-brand') {
+      container logo (Class: 'tr-logo') {
+        dynamictext logoTxt (Content: 'TR')
+      }
+      dynamictext brandName (Content: 'TraceOps', Class: 'tr-brand-name')
+      dynamictext brandSub (Content: 'Requirements & Delivery Assurance', Class: 'tr-brand-sub')
+    }
+
+    container programWrap (Class: 'tr-program-wrap') {
+      dynamictext programLabel (Content: 'Program', Class: 'tr-program-label')
+      container program (Class: 'tr-program') {
+        dynamictext programName (Content: 'Industrial Suite 4.2', Class: 'tr-program-name')
+        dynamictext programMods (Content: 'MES · PLM · Quality', Class: 'tr-program-mods')
+        dynamictext programCaret (Content: '▾', Class: 'tr-program-caret')
+      }
+    }
+
+    container spacer (Class: 'tr-spacer') {
+      dynamictext spacerTxt (Content: ' ')
+    }
+
+    container liveStats (Class: 'tr-livestats') {
+      container live1 (Class: 'tr-live') {
+        container dot1 (Class: 'tr-dot tr-dot--green') { dynamictext d1 (Content: ' ') }
+        dynamictext live1n (Content: '{1}', ContentParams: [{1} = LiveSessions], Class: 'tr-live-n')
+        dynamictext live1t (Content: 'agent sessions live')
+      }
+      container live2 (Class: 'tr-live') {
+        container dot2 (Class: 'tr-dot tr-dot--amber') { dynamictext d2 (Content: ' ') }
+        dynamictext live2n (Content: '{1}', ContentParams: [{1} = AwaitingValidation], Class: 'tr-live-n')
+        dynamictext live2t (Content: 'awaiting your validation')
+      }
+      container live3 (Class: 'tr-live') {
+        container dot3 (Class: 'tr-dot tr-dot--red') { dynamictext d3 (Content: ' ') }
+        dynamictext live3n (Content: '{1}', ContentParams: [{1} = GuardrailViolations], Class: 'tr-live-n')
+        dynamictext live3t (Content: 'guardrail violations')
+      }
+      container baseline (Class: 'tr-baseline') {
+        dynamictext baselineLbl (Content: 'Baseline')
+        dynamictext baselineTag (Content: '4.2-RC3', Class: 'tr-baseline-tag')
+        container avatar (Class: 'tr-avatar') {
+          dynamictext avatarTxt (Content: 'MK')
+        }
+      }
+    }
+  }
+}
+
+-- MARK: Sidebar
+
+/**
+ * The 186px workspace sidebar: navigation, per-area health bars and the legend.
+ *
+ * Nav items highlight from AppState/CurrentView rather than from a per-page
+ * flag, because all six pages share this one snippet.
+ */
+create or replace snippet TraceOps.SNIPPET_Sidebar
+{
+  dataview dvSide (DataSource: microflow TraceOps.DS_AppState, Class: 'tr-sidebar') {
+
+    dynamictext navLabel (Content: 'Workspace', Class: 'tr-side-label')
+
+    container navCockpit (
+      OnClick: microflow TraceOps.ACT_GoCockpit,
+      Class: 'tr-nav-item',
+      DynamicClasses: 'if $currentObject/CurrentView = ''cockpit'' then ''tr-nav-item--active'' else '''''
+    ) {
+      dynamictext icCockpit (Content: '◈', Class: 'tr-nav-icon')
+      dynamictext lbCockpit (Content: 'Cockpit', Class: 'tr-nav-label')
+      dynamictext bgCockpit (Content: '52', Class: 'tr-nav-badge')
+    }
+
+    container navTrace (
+      OnClick: microflow TraceOps.ACT_GoTrace,
+      Class: 'tr-nav-item',
+      DynamicClasses: 'if $currentObject/CurrentView = ''trace'' then ''tr-nav-item--active'' else '''''
+    ) {
+      dynamictext icTrace (Content: '⌸', Class: 'tr-nav-icon')
+      dynamictext lbTrace (Content: 'Traceability', Class: 'tr-nav-label')
+      dynamictext bgTrace (Content: '1 248', Class: 'tr-nav-badge')
+    }
+
+    container navArch (
+      OnClick: microflow TraceOps.ACT_GoGuardrails,
+      Class: 'tr-nav-item',
+      DynamicClasses: 'if $currentObject/CurrentView = ''arch'' then ''tr-nav-item--active'' else '''''
+    ) {
+      dynamictext icArch (Content: '⬡', Class: 'tr-nav-icon')
+      dynamictext lbArch (Content: 'Guardrails', Class: 'tr-nav-label')
+      dynamictext bgArch (Content: '12', Class: 'tr-nav-badge')
+    }
+
+    container navSessions (
+      OnClick: microflow TraceOps.ACT_GoSessions,
+      Class: 'tr-nav-item',
+      DynamicClasses: 'if $currentObject/CurrentView = ''sessions'' then ''tr-nav-item--active'' else '''''
+    ) {
+      dynamictext icSessions (Content: '⟳', Class: 'tr-nav-icon')
+      dynamictext lbSessions (Content: 'Agent sessions', Class: 'tr-nav-label')
+      dynamictext bgSessions (Content: '{1}', ContentParams: [{1} = LiveSessions], Class: 'tr-nav-badge tr-nav-badge--green')
+    }
+
+    container navValidate (
+      OnClick: microflow TraceOps.ACT_GoValidation,
+      Class: 'tr-nav-item',
+      DynamicClasses: 'if $currentObject/CurrentView = ''validate'' then ''tr-nav-item--active'' else '''''
+    ) {
+      dynamictext icValidate (Content: '✓', Class: 'tr-nav-icon')
+      dynamictext lbValidate (Content: 'Validation queue', Class: 'tr-nav-label')
+      dynamictext bgValidate (Content: '{1}', ContentParams: [{1} = AwaitingValidation], Class: 'tr-nav-badge tr-nav-badge--amber')
+    }
+
+    container navReleases (
+      OnClick: microflow TraceOps.ACT_GoReleases,
+      Class: 'tr-nav-item',
+      DynamicClasses: 'if $currentObject/CurrentView = ''releases'' then ''tr-nav-item--active'' else '''''
+    ) {
+      dynamictext icReleases (Content: '▤', Class: 'tr-nav-icon')
+      dynamictext lbReleases (Content: 'Releases', Class: 'tr-nav-label')
+      dynamictext bgReleases (Content: '4', Class: 'tr-nav-badge')
+    }
+
+    dynamictext healthLabel (Content: 'Health by area', Class: 'tr-side-label tr-side-label--tight')
+
+    listview lvHealth (
+      DataSource: database from TraceOps.Requirement where [Depth = 0] sort by SortIndex asc,
+      Class: 'tr-health tr-lv'
+    ) {
+      container healthRow (Class: 'tr-health-row') {
+        container healthTop (Class: 'tr-health-top') {
+          dynamictext healthName (Content: '{1}', ContentParams: [{1} = Title], Class: 'tr-health-name')
+          dynamictext healthPct (
+            Content: '{1}%',
+            ContentParams: [{1} = VerifiedPercent],
+            Class: 'tr-health-pct',
+            DynamicClasses: 'if $currentObject/RollViolations > 0 then ''tr-health-pct--red'' else if $currentObject/VerifiedBucket >= 14 then ''tr-health-pct--green'' else ''tr-health-pct--amber'''
+          )
+        }
+        container healthBar (Class: 'tr-bar') {
+          container hbV (Class: 'tr-seg tr-seg--verified', DynamicClasses: '''tr-w-'' + toString($currentObject/VerifiedBucket)') {
+            dynamictext hv (Content: ' ')
+          }
+          container hbB (Class: 'tr-seg tr-seg--built', DynamicClasses: '''tr-w-'' + toString($currentObject/BuiltBucket)') {
+            dynamictext hb (Content: ' ')
+          }
+          container hbD (Class: 'tr-seg tr-seg--dev', DynamicClasses: '''tr-w-'' + toString($currentObject/DevBucket)') {
+            dynamictext hd (Content: ' ')
+          }
+        }
+      }
+    }
+
+    container sideSpacer (Class: 'tr-spacer') {
+      dynamictext ss (Content: ' ')
+    }
+
+    container legend (Class: 'tr-legend') {
+      container lg1 (Class: 'tr-legend-item') {
+        container lgd1 (Class: 'tr-legend-dot tr-legend-dot--verified') { dynamictext x1 (Content: ' ') }
+        dynamictext lgt1 (Content: 'Verified')
+      }
+      container lg2 (Class: 'tr-legend-item') {
+        container lgd2 (Class: 'tr-legend-dot tr-legend-dot--built') { dynamictext x2 (Content: ' ') }
+        dynamictext lgt2 (Content: 'Built, unverified')
+      }
+      container lg3 (Class: 'tr-legend-item') {
+        container lgd3 (Class: 'tr-legend-dot tr-legend-dot--dev') { dynamictext x3 (Content: ' ') }
+        dynamictext lgt3 (Content: 'In agent session')
+      }
+      container lg4 (Class: 'tr-legend-item') {
+        container lgd4 (Class: 'tr-legend-dot tr-legend-dot--none') { dynamictext x4 (Content: ' ') }
+        dynamictext lgt4 (Content: 'Unimplemented')
+      }
+    }
+  }
+}
+
+-- MARK: Status bar
+
+/**
+ * The 24px footer strip.
+ */
+create or replace snippet TraceOps.SNIPPET_StatusBar
+{
+  dataview dvStatus (DataSource: microflow TraceOps.DS_AppState, Class: 'tr-statusbar') {
+    dynamictext stBaseline (Content: 'baseline 4.2-RC3')
+    dynamictext stReqs (Content: '1 248 reqs')
+    dynamictext stGuards (Content: '12 guardrails')
+    dynamictext stArtifacts (Content: '2 104 artifacts')
+    dynamictext stTests (Content: '2 026 tests')
+    dynamictext stVerified (Content: 'verified 58%')
+    dynamictext stBuilt (Content: 'built 71%')
+    dynamictext stViolations (Content: '{1} violations', ContentParams: [{1} = GuardrailViolations])
+    container stSpacer (Class: 'tr-spacer') { dynamictext sx (Content: ' ') }
+    dynamictext stEvent (Content: 'last agent event 11 s ago')
+  }
+}

@@ -1,0 +1,11 @@
+create or replace navigation Responsive
+  home page TraceOps.Cockpit
+  menu (
+    menu item 'Cockpit' page TraceOps.Cockpit;
+    menu item 'Traceability' page TraceOps.Traceability;
+    menu item 'Guardrails' page TraceOps.Guardrails;
+    menu item 'Agent sessions' page TraceOps.AgentSessions;
+    menu item 'Validation queue' page TraceOps.ValidationQueue;
+    menu item 'Releases' page TraceOps.Releases;
+  )
+;
