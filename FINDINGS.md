@@ -3,6 +3,15 @@
 Running log of mxcli bugs, surprises, and workarounds. Numbered, with the exact
 command and output. Started in the toolchain-setup session (phase 1).
 
+**Re-testing.** `TraceOps/scripts/findings-regression.sh` reproduces every entry
+that is an mxcli behaviour, against whatever mxcli is installed, and reports
+FIXED / STILL PRESENT / CHANGED. Run it after any mxcli update. The remaining
+entries are Mendix semantics, Atlas CSS, environment or test methodology — mxcli
+cannot fix those, and the script says so rather than pretending to test them.
+
+Last run: mxcli `nightly-68-gc1fd4d7a` (2026-07-30) — **0 fixed, 11 still
+present**.
+
 ---
 
 ## 1. `go build` alone cannot build mxcli — the ANTLR parser is not committed
@@ -283,6 +292,9 @@ The app contains: 29 errors.
 Note the empty container is not an option either — lint rule MPR006 flags empty
 containers as a runtime crash risk.
 
+**Re-tested on mxcli `nightly-68-gc1fd4d7a` (2026-07-30): still present**, via
+`TraceOps/scripts/findings-regression.sh`.
+
 ---
 
 ## 10. A `Content:` literal starting with `$` + digits is parsed as a variable reference
@@ -319,6 +331,9 @@ dynamictext b (Content: 'x$318')                                 -- ok (not lead
 dynamictext d (Content: '{1}', ContentParams: [{1} = '$318'])    -- ok — used
 ```
 
+**Re-tested on mxcli `nightly-68-gc1fd4d7a` (2026-07-30): still present**, via
+`TraceOps/scripts/findings-regression.sh`.
+
 ---
 
 ## 11. MDL string literals cannot span lines
@@ -344,6 +359,9 @@ The checker's own hint confirms it is general to MDL, not just microflows:
 ListView. TraceOps has a `CodeLine` entity (LineKind / Text / Tone / SortIndex)
 used for all three blocks. This turned out better than a wrapped string anyway —
 each line carries its own tone, so `✗` failures render red and `›` steps grey.
+
+**Re-tested on mxcli `nightly-68-gc1fd4d7a` (2026-07-30): still present**, via
+`TraceOps/scripts/findings-regression.sh`.
 
 ---
 
@@ -373,6 +391,9 @@ the platform error code:
   ✗ enumeration value 'new' is a reserved word (CE7247) [MDL010]
       at TraceOps.FileChange
 ```
+
+**Re-tested on mxcli `nightly-68-gc1fd4d7a` (2026-07-30): still present**, via
+`TraceOps/scripts/findings-regression.sh`.
 
 ---
 
@@ -486,6 +507,9 @@ Association delete behavior accepts only
 `DELETE_AND_REFERENCES | DELETE_BUT_KEEP_REFERENCES | DELETE_IF_NO_REFERENCES | CASCADE | PREVENT`.
 For "delete the child when the parent goes", the value is `CASCADE`.
 
+**Re-tested on mxcli `nightly-68-gc1fd4d7a` (2026-07-30): still present**, via
+`TraceOps/scripts/findings-regression.sh`.
+
 ---
 
 ## 17. ListView `PageSize` cannot be set from MDL at all — hardcoded to 20
@@ -562,6 +586,9 @@ Every other list in the app is under 20 rows, so this affects one view. Switchin
 the tree to a DATAGRID would fix the paging but costs the pixel-exact row markup
 that the design needs (the migrate-design-prototype skill recommends ListView for
 exactly this reason).
+
+**Re-tested on mxcli `nightly-68-gc1fd4d7a` (2026-07-30): still present**, via
+`TraceOps/scripts/findings-regression.sh`.
 
 ---
 
@@ -718,6 +745,9 @@ microflow definitions are now `create or replace`.
 (`Error: attribute 'IsSelected' already exists`), so schema additions still have
 to be applied once, or the file split at its first microflow.
 
+**Re-tested on mxcli `nightly-68-gc1fd4d7a` (2026-07-30): still present**, via
+`TraceOps/scripts/findings-regression.sh`.
+
 ---
 
 ## 22. Mendix has no integer division, and no way to get an Integer back from one
@@ -810,10 +840,22 @@ combobox edParent (Label: 'Parent', Association: TraceOps.Requirement_Parent, ..
 → CE0642: Combo box 'edParent': An attribute must be selected.
 ```
 
-`Attribute:` is mandatory, and it must be an attribute of the DataView entity —
-there is no `Association:`/`SelectableObjects:` form in the grammar, so the
-Atlas Combobox's association mode is unreachable from MDL. Same for
-`referenceselector`, which is not a recognised widget type at all.
+`Attribute:` is mandatory. Note *where* this fails, which the re-test pinned down
+more precisely than the original write-up: the grammar **accepts**
+`Association: …` — `mxcli check` passes — and the writer then drops it silently,
+so the round-trip comes back bare and only MxBuild objects:
+
+```
+$ mxcli -p proj.mpr -c "DESCRIBE PAGE TraceOps.ZZ_Probe23"
+    combobox cbParent (Label: 'Parent')        <- the Association is gone
+
+$ mx check proj.mpr
+[error] [CE0642] "Property 'Attribute' is required." at Combo box 'cbParent'
+```
+
+That puts it in the same family as #9, #10 and #17: a property the parser takes
+and the writer discards. `referenceselector` is not a recognised widget type at
+all, so the Atlas Combobox's association mode stays unreachable from MDL.
 
 **Workaround —** carry the parent's business key in a plain attribute, and
 resolve it to the association in the save microflow:
@@ -828,6 +870,9 @@ alter entity TraceOps.Requirement add ParentReqId: String(60);
 which turns out to be worth doing anyway: it is the natural place for the "no
 such id", "cannot be its own parent" and cycle checks that a reference selector
 would not have given.
+
+**Re-tested on mxcli `nightly-68-gc1fd4d7a` (2026-07-30): still present**, via
+`TraceOps/scripts/findings-regression.sh`.
 
 ---
 
@@ -1009,6 +1054,9 @@ character sequence that ends a doc comment, which terminated the block early and
 produced a fresh wall of parse errors. Don't quote comment delimiters inside a doc
 comment.
 
+**Re-tested on mxcli `nightly-68-gc1fd4d7a` (2026-07-30): still present**, via
+`TraceOps/scripts/findings-regression.sh`.
+
 ---
 
 ## 28. `count()` is an activity, not an expression — and it declares its own variable
@@ -1046,6 +1094,9 @@ is an error:
 Useful counterpart to #22: `count()` returns an **Integer**, so counts are safe to
 assign to Integer attributes. `sum()` returns a Decimal and hits the no-conversion
 wall, so sums into Integer attributes still need an accumulator loop.
+
+**Re-tested on mxcli `nightly-68-gc1fd4d7a` (2026-07-30): still present**, via
+`TraceOps/scripts/findings-regression.sh`.
 
 ---
 

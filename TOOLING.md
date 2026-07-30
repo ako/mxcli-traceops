@@ -258,6 +258,22 @@ re-fetches an object cannot see the DataView's uncommitted edit — which made t
 search silently inert (#29), and two assertions passed against a completely broken
 feature because the 20-row page cap satisfied them (#30).
 
+### `scripts/findings-regression.sh`
+
+mxcli is a moving target — this project has been through four nightly builds. The
+script re-tests every FINDINGS entry that is an *mxcli* behaviour against whatever
+binary is installed, and reports FIXED / STILL PRESENT / CHANGED. It runs against a
+throwaway copy of the project, so the real `.mpr` is never touched.
+
+```bash
+bash TraceOps/scripts/findings-regression.sh
+```
+
+It also states which findings it does *not* test and why — Mendix semantics, Atlas
+CSS, environment and test methodology are not mxcli's to fix, and a green line for
+them would be a lie. Note the project copy must include `themesource/` and
+`modules/`, or `mx check` buries the result under ~930 CE6083 theme errors.
+
 ### `scripts/check-mdl.sh`
 
 `mx check` validates the *project*; nothing validated the *sources that produce
