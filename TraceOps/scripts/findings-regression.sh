@@ -23,7 +23,7 @@ WORK=$(mktemp -d)
 PROJ="$WORK/proj"
 trap 'rm -rf "$WORK"' EXIT
 
-fixed=0; present=0; changed=0; improved=0
+fixed=0; present=0; changed=0; improved=0; bydesign=0
 
 report() {  # report <status> <id> <summary>
   case "$1" in
@@ -33,6 +33,9 @@ report() {  # report <status> <id> <summary>
     # The behaviour is unchanged on purpose, but the finding's actual complaint —
     # usually an unactionable error message — has been addressed.
     IMPROVED) improved=$((improved+1)); printf '\033[1;36mIMPROVED    \033[0m #%-3s %s\n' "$2" "$3" ;;
+    # Not a defect. The probe asserts the documented correct form still works, so
+    # the entry keeps earning its place without pretending to be an open bug.
+    BYDESIGN) bydesign=$((bydesign+1)); printf '\033[1;35mBY DESIGN   \033[0m #%-3s %s\n' "$2" "$3" ;;
   esac
 }
 
@@ -108,8 +111,19 @@ begin
   return;
 end;
 /")
-if grep -qi 'MDL044\|not a Mendix expression function' <<<"$out"; then
-  report PRESENT 28 "count() inline in an expression is still rejected (correctly, with MDL044)"
+ok=$(syntax "create or replace microflow TraceOps.ZZ_Probe28b ()
+begin
+  retrieve \$All from TraceOps.Requirement;
+  \$S = call microflow TraceOps.DS_AppState ();
+  set \$N = count(\$All);
+  change \$S (ReqCount = \$N);
+  return;
+end;
+/")
+if grep -qi 'MDL044\|not a Mendix expression function' <<<"$out" && grep -q 'Check passed' <<<"$ok"; then
+  report BYDESIGN 28 "aggregates need their own variable (Mendix rule); \$n = count(\$L) passes, inline is caught by MDL044"
+elif ! grep -q 'Check passed' <<<"$ok"; then
+  report PRESENT 28 "the documented form \$n = count(\$List) no longer passes — regression"
 else
   report CHANGED 28 "count() inline no longer flagged — check it still builds"
 fi
@@ -133,21 +147,26 @@ end;
 EOF
 "$MXCLI" exec "$WORK/p21.mdl" -p "$PROJ/TraceOps.mpr" >/dev/null 2>&1
 out=$("$MXCLI" exec "$WORK/p21.mdl" -p "$PROJ/TraceOps.mpr" 2>&1)
-if grep -qi 'already exists' <<<"$out"; then
-  report PRESENT 21 "'create microflow' is still not idempotent"
+# A plain `create` refusing to overwrite is intentional and SQL-shaped. What has
+# to hold is that the error names a working idempotent form.
+if grep -qi 'already exists' <<<"$out" && grep -qi 'create or modify' <<<"$out"; then
+  report BYDESIGN 21 "plain 'create' refuses by design, and the error names 'create or modify'"
+elif grep -qi 'already exists' <<<"$out"; then
+  report PRESENT 21 "'create microflow' refuses with no pointer to an idempotent form"
 else
-  report FIXED 21 "'create microflow' can be re-applied"
+  report CHANGED 21 "'create microflow' now overwrites silently — that would be a regression"
 fi
 
+# The documented re-runnable form for a schema addition.
 cat > "$WORK/p21b.mdl" <<'EOF'
-alter entity TraceOps.Requirement add attribute ZZProbe21: string(10);
+alter entity TraceOps.Requirement add attribute if not exists ZZProbe21: string(10);
 EOF
 "$MXCLI" exec "$WORK/p21b.mdl" -p "$PROJ/TraceOps.mpr" >/dev/null 2>&1
 out=$("$MXCLI" exec "$WORK/p21b.mdl" -p "$PROJ/TraceOps.mpr" 2>&1)
-if grep -qi 'already exists' <<<"$out"; then
-  report PRESENT 21 "  └ 'alter entity add attribute' still has no 'or replace' form"
+if grep -qi 'skipped' <<<"$out"; then
+  report BYDESIGN 21 "  └ 'add attribute if not exists' is idempotent, on released mxcli too"
 else
-  report FIXED 21 "  └ 'alter entity add attribute' is now re-appliable"
+  report PRESENT 21 "  └ 'add attribute if not exists' is not idempotent: $(tail -1 <<<"$out")"
 fi
 
 # #17 — ListView PageSize. Set it, then read it back out of the model.
@@ -276,8 +295,8 @@ if [ "$errs" -gt 0 ]; then
   grep '^\[error\]' <<<"$mxout" | sed 's/^/    /' | head -12
 fi
 
-printf '\n%d fixed, %d still present, %d improved, %d changed\n' \
-  "$fixed" "$present" "$improved" "$changed"
+printf '\n%d fixed, %d still present, %d improved, %d by design, %d changed\n' \
+  "$fixed" "$present" "$improved" "$bydesign" "$changed"
 
 cat <<'NOTE'
 

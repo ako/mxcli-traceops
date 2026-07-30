@@ -12,13 +12,13 @@
  */
 
 alter entity TraceOps.Requirement
-  add attribute IsSelected: boolean not null default false;
+  add attribute if not exists IsSelected: boolean not null default false;
 
 alter entity TraceOps.AgentSession
-  add attribute IsSelected: boolean not null default false;
+  add attribute if not exists IsSelected: boolean not null default false;
 
 alter entity TraceOps.ValidationItem
-  add attribute IsSelected: boolean not null default false;
+  add attribute if not exists IsSelected: boolean not null default false;
 
 /**
  * Selects a requirement — drives the detail pane and the trace lanes.

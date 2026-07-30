@@ -8,7 +8,7 @@
  */
 
 alter entity TraceOps.AppState
-  add attribute CurrentView: string(20) not null default 'cockpit';
+  add attribute if not exists CurrentView: string(20) not null default 'cockpit';
 
 /**
  * Opens the cockpit.

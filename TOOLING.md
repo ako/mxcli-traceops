@@ -274,6 +274,26 @@ CSS, environment and test methodology are not mxcli's to fix, and a green line f
 them would be a lie. Note the project copy must include `themesource/` and
 `modules/`, or `mx check` buries the result under ~930 CE6083 theme errors.
 
+### Re-applying sources
+
+The numbered files build the app onto an empty project, in order. They are not a
+sync tool, and the distinction is load-bearing:
+
+- **Additive files are re-runnable.** `06`, `12`, `17` and `21` use
+  `add attribute if not exists` (and `create or modify enumeration` in `21`), so
+  you can edit one and re-apply it repeatedly. Verified by applying each three
+  times and confirming nothing is pruned.
+- **The domain model is not, by design.** `create persistent entity` refuses to
+  overwrite, and mxcli's error explains why: `create or modify entity` "drops any
+  attribute this statement omits". Since `17` and `21` add columns to entities that
+  `01` defines, blanket-converting `01` would silently delete them on every
+  re-apply. Verified — an attribute added after a `create or modify` definition
+  disappears when that definition is re-applied.
+
+This corrected a real over-claim in the repo: four files could not be re-applied,
+not the two assumed, and the fix was to use documented forms I had not been using
+(FINDINGS #21, which is not an mxcli defect).
+
 ### `scripts/check-mdl.sh`
 
 `mx check` validates the *project*; nothing validated the *sources that produce

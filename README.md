@@ -7,8 +7,14 @@ the way to verified evidence — `intent → requirement → guardrail → artif
 
 Everything here is authored through **[mxcli](https://github.com/ako/mxcli) and MDL**.
 The `.mpr` is never hand-edited and Studio Pro is never opened: the app is defined
-by the `.mdl` files in [`TraceOps/mdlsource/`](TraceOps/mdlsource/) and can be
-re-applied from scratch.
+by the `.mdl` files in [`TraceOps/mdlsource/`](TraceOps/mdlsource/), applied in
+order onto an empty project.
+
+They build the app; they are not a sync tool. Re-running the *domain model* onto a
+project that already has it is deliberately refused by mxcli, because overwriting
+an entity drops any member a later file added — see [FINDINGS.md](FINDINGS.md) #21.
+The additive files (`06`, `12`, `17`, `21`) *are* individually re-runnable, which
+is what you want while iterating on one of them.
 
 ---
 

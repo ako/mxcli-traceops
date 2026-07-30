@@ -10,9 +10,13 @@ entries are Mendix semantics, Atlas CSS, environment or test methodology — mxc
 cannot fix those, and the script says so rather than pretending to test them.
 
 Last run: a local build of **mxcli PR #58** (`nightly-72-gc55e2029`, 2026-07-30) —
-**7 fixed** (#9, #10, #11, #12, #17, #23, #27), **1 improved** (#16), 3 still
-present (#21 both halves, #28). Progress across three runs of the same harness:
-`nightly-68` 0 fixed → `nightly-71` 5 → `nightly-72` 7 + 1 improved.
+**7 fixed** (#9, #10, #11, #12, #17, #23, #27) and **1 improved** (#16). The two
+that remained, #21 and #28, turned out **not to be defects**: both have documented
+correct forms that work today, and #21's was my error rather than a tool
+limitation. So nothing on this list is an open mxcli bug.
+
+Progress across three runs of the same harness: `nightly-68` 0 fixed →
+`nightly-71` 5 → `nightly-72` 7 fixed + 1 improved + 2 reclassified.
 
 ---
 
@@ -752,8 +756,51 @@ microflow definitions are now `create or replace`.
 (`Error: attribute 'IsSelected' already exists`), so schema additions still have
 to be applied once, or the file split at its first microflow.
 
-**Re-tested on mxcli `nightly-68-gc1fd4d7a` (2026-07-30): still present**, via
-`TraceOps/scripts/findings-regression.sh`.
+**Not a defect — corrected 2026-07-30.** The maintainer's position is that a plain
+`create` refusing to overwrite is intentional and SQL-shaped, and re-testing bears
+that out: the documented idempotent forms exist and I simply was not using them.
+
+```
+$ mxcli exec mf.mdl -p proj.mpr          # second run
+Error: microflow 'TraceOps.ZZ_V21' already exists (use create or modify to overwrite)
+
+$ mxcli exec a2.mdl -p proj.mpr          # `add attribute if not exists`, twice
+Attribute 'ZZV21' already exists on entity TraceOps.Requirement — skipped
+Attribute 'ZZV21' already exists on entity TraceOps.Requirement — skipped
+```
+
+`ADD ATTRIBUTE IF NOT EXISTS` is documented (`mxcli syntax
+domain-model.entity.alter` lists it under "idempotent") and works on **released**
+mxcli, not just PR #58 — so this was never a defect at all, in either half.
+
+**And the refusal is protective, not merely conservative.** `create or modify` on
+an entity replaces the whole definition and drops anything it omits — verified:
+
+```
+$ mxcli -p proj.mpr -c "DESCRIBE ENTITY TraceOps.ZZPrune"   # after adding C
+  A: String(10), B: String(10), C: String(10)
+# re-apply the original two-attribute `create or modify` definition
+  A: String(10), B: String(10)                              # C is gone
+```
+
+mxcli's own error says exactly this, which is a better diagnostic than most:
+
+```
+Error: entity already exists: TraceOps.ZZEnt2 — to add or change a member use
+'alter entity ... add attribute ...' (leaves the rest intact); use 'create or
+modify entity' only to replace the whole definition (it drops any attribute this
+statement omits)
+```
+
+That matters here: `01-domain-model.mdl` defines `Requirement`, and files 17 and 21
+add columns to it afterwards. Blanket-converting 01 to `create or modify` would
+silently delete those columns on every re-apply. So plain `create` is right.
+
+**What this cost me, and what it fixed.** Acting on this exposed that *four* source
+files could not be re-applied, not the two I had assumed — `06`, `12`, `17` and
+`21`, the last two of which are mine. All four now use `add attribute if not
+exists` (plus `create or modify enumeration` in 21) and survive repeated
+application with nothing pruned. The domain model is deliberately left alone.
 
 ---
 
@@ -1100,8 +1147,12 @@ Useful counterpart to #22: `count()` returns an **Integer**, so counts are safe 
 assign to Integer attributes. `sum()` returns a Decimal and hits the no-conversion
 wall, so sums into Integer attributes still need an accumulator loop.
 
-**Re-tested on mxcli `nightly-68-gc1fd4d7a` (2026-07-30): still present**, via
-`TraceOps/scripts/findings-regression.sh`.
+**Not a defect — confirmed 2026-07-30.** Requiring an aggregate to land in its own
+variable is a Mendix platform rule, not an mxcli limitation; `$n = count($List)`
+has always been the correct form and passes. What mxcli contributes is MDL044,
+which catches the inline form at check time with an actionable message instead of
+letting it reach MxBuild as a bare CE0117 — which is the good outcome, not a
+remaining bug. This entry stays as a note about the *rule*, not as an open defect.
 
 ---
 

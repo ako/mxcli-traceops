@@ -11,8 +11,11 @@
  *      deciding, and ValidationItem had nowhere to record an outcome.
  *   3. The tree's filter box was a styled container with no input widget.
  *
- * As with 17-crud-domain.mdl, `alter entity … add attribute` has no
- * `or replace` form, so this file applies once (FINDINGS #21).
+ * Every clause uses `add attribute if not exists`, and the enumeration uses
+ * `create or modify`, so this file is safe to apply repeatedly (FINDINGS #21).
+ * `or modify` is safe on an enumeration because nothing adds values to it later —
+ * it would not be safe on an entity, which is exactly why plain `create entity`
+ * refuses to overwrite (it would drop members added by a later file).
  */
 
 -- MARK: Validation decisions
@@ -22,18 +25,18 @@
  *
  * `pending` is the default so every seeded item starts in the queue.
  */
-create enumeration TraceOps.ValidationDecision (
+create or modify enumeration TraceOps.ValidationDecision (
   pending 'awaiting review',
   accepted 'evidence accepted',
   sentback 'sent back to agent'
 );
 
 alter entity TraceOps.ValidationItem
-  add attribute Decision: enumeration(TraceOps.ValidationDecision) not null default pending
+  add attribute if not exists Decision: enumeration(TraceOps.ValidationDecision) not null default pending
   -- DecisionLabel is pre-rendered: an enum bound to a DYNAMICTEXT renders its
   -- value name rather than its caption (FINDINGS #19).
-  add attribute DecisionLabel: string(40)
-  add attribute DecidedBy: string(60);
+  add attribute if not exists DecisionLabel: string(40)
+  add attribute if not exists DecidedBy: string(60);
 
 -- MARK: Tree search
 
@@ -45,8 +48,8 @@ alter entity TraceOps.ValidationItem
 -- leaf-only owner test hides every one of them and the chip filters the tree to
 -- nothing. The design's "34" was never derived from anything.
 alter entity TraceOps.Requirement
-  add attribute MatchesSearch: boolean not null default true
-  add attribute MatchesOwner: boolean not null default true;
+  add attribute if not exists MatchesSearch: boolean not null default true
+  add attribute if not exists MatchesOwner: boolean not null default true;
 
 -- MARK: Live counters
 
@@ -55,25 +58,25 @@ alter entity TraceOps.AppState
   -- no current user to compare against and the owner filter has to be pinned to a
   -- name. Keeping it here rather than inline in ACT_ApplyTreeState makes it one
   -- edit when real authentication lands.
-  add attribute CurrentUserName: string(60) not null default 'M. Koelewijn'
-  add attribute SearchText: string(100)
+  add attribute if not exists CurrentUserName: string(60) not null default 'M. Koelewijn'
+  add attribute if not exists SearchText: string(100)
   -- The counters below are recomputed by ACT_RecomputeCounters on every write.
   -- They describe the modelled tree, so each one has to agree with the list it
   -- sits above. The baseline-scale figures in the status bar and the tree footer
   -- are a different thing and stay on Baseline.
-  add attribute ReqCount: integer not null default 0
-  add attribute GapNoImpl: integer not null default 0
-  add attribute GapNoTest: integer not null default 0
-  add attribute GapViolations: integer not null default 0
-  add attribute OpenGapCount: integer not null default 0
-  add attribute MineCount: integer not null default 0
-  add attribute GuardrailCount: integer not null default 0
-  add attribute ReleaseCount: integer not null default 0
-  add attribute RiskCount: integer not null default 0
-  add attribute LeafCount: integer not null default 0
-  add attribute MappedPercent: integer not null default 0
-  add attribute ImplementedPercent: integer not null default 0
-  add attribute VerifiedPct: integer not null default 0;
+  add attribute if not exists ReqCount: integer not null default 0
+  add attribute if not exists GapNoImpl: integer not null default 0
+  add attribute if not exists GapNoTest: integer not null default 0
+  add attribute if not exists GapViolations: integer not null default 0
+  add attribute if not exists OpenGapCount: integer not null default 0
+  add attribute if not exists MineCount: integer not null default 0
+  add attribute if not exists GuardrailCount: integer not null default 0
+  add attribute if not exists ReleaseCount: integer not null default 0
+  add attribute if not exists RiskCount: integer not null default 0
+  add attribute if not exists LeafCount: integer not null default 0
+  add attribute if not exists MappedPercent: integer not null default 0
+  add attribute if not exists ImplementedPercent: integer not null default 0
+  add attribute if not exists VerifiedPct: integer not null default 0;
 
 -- MARK: Baseline totals
 
@@ -88,8 +91,8 @@ alter entity TraceOps.AppState
  * the page — and everything that labels the *modelled* tree becomes live.
  */
 alter entity TraceOps.Baseline
-  add attribute ReqTotal: integer not null default 0
-  add attribute ArtifactTotal: integer not null default 0
-  add attribute TestTotal: integer not null default 0
-  add attribute VerifiedPercent: integer not null default 0
-  add attribute BuiltPercent: integer not null default 0;
+  add attribute if not exists ReqTotal: integer not null default 0
+  add attribute if not exists ArtifactTotal: integer not null default 0
+  add attribute if not exists TestTotal: integer not null default 0
+  add attribute if not exists VerifiedPercent: integer not null default 0
+  add attribute if not exists BuiltPercent: integer not null default 0;
