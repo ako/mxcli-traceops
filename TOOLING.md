@@ -314,9 +314,9 @@ honest on either build.
 
 ## Adopting the rest of mxcli PR #58
 
-PR #58 fixes five findings: #9, #10, #17, #23 and #27. Only #17 is taken up so far,
-because it is the only one that is safe on both builds. The others are not adopted
-yet, deliberately:
+PR #58 now fixes seven findings — #9, #10, #11, #12, #17, #23, #27 — and improves
+#16's diagnostic. Only #17 is taken up so far, because it is the only one that is
+safe on both builds. The others are not adopted yet, deliberately:
 
 - **#23 (a combobox binding an association)** would let the requirement editor use a
   real reference selector instead of the `ParentReqId` business-key round trip, and
@@ -327,6 +327,10 @@ yet, deliberately:
   those workarounds remain correct on every build.
 - **#27** — the `--` comments in `17-crud-domain.mdl` and `21-live-domain.mdl` work
   everywhere; converting them back to doc comments would break on current main.
+- **#11 / #12** are equally safe to leave. The `CodeLine` child rows are still the
+  better model for an agent log — it genuinely is a list of lines — and the
+  `appBody` / `mainContent` / `searchBox` renames cost nothing. Both were forced
+  workarounds and are now merely choices, which is the useful part.
 
 ## Why `TraceOps/widgets/*.mpk` is committed
 

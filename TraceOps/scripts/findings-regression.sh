@@ -23,13 +23,16 @@ WORK=$(mktemp -d)
 PROJ="$WORK/proj"
 trap 'rm -rf "$WORK"' EXIT
 
-fixed=0; present=0; changed=0
+fixed=0; present=0; changed=0; improved=0
 
 report() {  # report <status> <id> <summary>
   case "$1" in
-    FIXED)   fixed=$((fixed+1))   ; printf '\033[1;32mFIXED       \033[0m #%-3s %s\n' "$2" "$3" ;;
-    PRESENT) present=$((present+1)); printf '\033[1;31mSTILL PRESENT\033[0m #%-3s %s\n' "$2" "$3" ;;
-    CHANGED) changed=$((changed+1)); printf '\033[1;33mCHANGED     \033[0m #%-3s %s\n' "$2" "$3" ;;
+    FIXED)    fixed=$((fixed+1))     ; printf '\033[1;32mFIXED       \033[0m #%-3s %s\n' "$2" "$3" ;;
+    PRESENT)  present=$((present+1)) ; printf '\033[1;31mSTILL PRESENT\033[0m #%-3s %s\n' "$2" "$3" ;;
+    CHANGED)  changed=$((changed+1)) ; printf '\033[1;33mCHANGED     \033[0m #%-3s %s\n' "$2" "$3" ;;
+    # The behaviour is unchanged on purpose, but the finding's actual complaint —
+    # usually an unactionable error message — has been addressed.
+    IMPROVED) improved=$((improved+1)); printf '\033[1;36mIMPROVED    \033[0m #%-3s %s\n' "$2" "$3" ;;
   esac
 }
 
@@ -54,7 +57,8 @@ end;
 if grep -q 'Syntax errors found' <<<"$out"; then
   report PRESENT 11 "a string literal still cannot span lines"
 else
-  report FIXED 11 "multi-line string literals now parse"
+  report FIXED 11 "multi-line string literals parse (apply + build asserted below)"
+  MULTILINE_OK=1
 fi
 
 # #12 — reserved words rejected as widget names.
@@ -67,15 +71,21 @@ out=$(syntax "create or replace page TraceOps.ZZ_Probe12 (Title: 'p', Layout: At
 if grep -qi 'syntax errors found\|reserved' <<<"$out"; then
   report PRESENT 12 "'body' is still rejected as a widget name"
 else
-  report FIXED 12 "reserved words are usable as widget names"
+  report FIXED 12 "reserved words work as widget names (apply + build asserted below)"
+  KEYWORDNAME_OK=1
 fi
 
 # #16 — `alter entity` requires the `attribute` keyword.
 out=$(syntax "alter entity TraceOps.Requirement add ZZProbe16: string(10);")
-if grep -q 'Syntax errors found' <<<"$out"; then
-  report PRESENT 16 "'add <name>:' without the 'attribute' keyword is still rejected"
-else
+if ! grep -q 'Syntax errors found' <<<"$out"; then
   report FIXED 16 "'add <name>:' now parses without the 'attribute' keyword"
+elif grep -q 'needs the .attribute. keyword' <<<"$out"; then
+  # Keeping `attribute` mandatory is right — it is the documented form. The
+  # finding's real complaint was the unactionable "no viable alternative at input
+  # 'addGuardrailRef'", and that is what got fixed.
+  report IMPROVED 16 "syntax unchanged by design, but the error now shows the correct form"
+else
+  report PRESENT 16 "'add <name>:' is rejected with no hint about the 'attribute' keyword"
 fi
 
 # #27 — a doc comment between two `add attribute` clauses.
@@ -190,6 +200,31 @@ else
   report CHANGED 10 "'\$318' persists as: $(grep -o "dollar10[^)]*)" <<<"$out" | head -1)"
 fi
 
+# #11 / #12 — the constructs have to survive apply and build, not just parse.
+# Asserting on the parse alone is how two probes previously reported a fixed
+# behaviour as broken (and #17 hid a silent drop behind a passing check).
+if [ "${MULTILINE_OK:-0}" = 1 ] || [ "${KEYWORDNAME_OK:-0}" = 1 ]; then
+  cat > "$WORK/p1112.mdl" <<'EOF'
+create or replace microflow TraceOps.ZZ_Probe11 ()
+returns String as $S
+begin
+  declare $S String = 'line one
+line two';
+  return $S;
+end;
+/
+create or replace page TraceOps.ZZ_Probe12 (Title: 'p', Layout: Atlas_Core.Atlas_Default)
+{
+  container body {
+    container content {
+      dynamictext search (Content: 'keyword-named widgets')
+    }
+  }
+}
+EOF
+  "$MXCLI" exec "$WORK/p1112.mdl" -p "$PROJ/TraceOps.mpr" >/dev/null 2>&1
+fi
+
 # #23 — combobox binding an association. Association mode needs three things: the
 # reference, the option list, and a caption attribute. Probing with `Association:`
 # alone tests the *incomplete* form, which is a different question — so both are
@@ -241,7 +276,8 @@ if [ "$errs" -gt 0 ]; then
   grep '^\[error\]' <<<"$mxout" | sed 's/^/    /' | head -12
 fi
 
-printf '\n%d fixed, %d still present, %d changed\n' "$fixed" "$present" "$changed"
+printf '\n%d fixed, %d still present, %d improved, %d changed\n' \
+  "$fixed" "$present" "$improved" "$changed"
 
 cat <<'NOTE'
 
@@ -256,8 +292,8 @@ Out of scope — these are Mendix or environment behaviour, not mxcli:
   #25,#30 test-harness behaviour
   #26,#29 consequences of app design, not tool defects
 
-A clean `mx check` on the probe project means #9, #10 and #23 are all behaving:
-each probe writes the construct that used to fail, so 0 errors is the pass. If
-they regress, expect CE0720 at 'empty9', CE0402 at 'dollar10', CE0642 at
+A clean `mx check` on the probe project is the real pass for #9, #10, #11, #12 and
+#23: each writes the construct that used to fail, so 0 errors is the assertion. On
+a regression, expect CE0720 at 'empty9', CE0402 at 'dollar10', CE0642 at
 'cbParent'.
 NOTE

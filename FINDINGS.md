@@ -9,9 +9,10 @@ FIXED / STILL PRESENT / CHANGED. Run it after any mxcli update. The remaining
 entries are Mendix semantics, Atlas CSS, environment or test methodology — mxcli
 cannot fix those, and the script says so rather than pretending to test them.
 
-Last run: a local build of **mxcli PR #58** (`nightly-71-g240e7d2c`, 2026-07-30) —
-**5 fixed** (#9, #10, #17, #23, #27), 6 still present. The previous run, on
-`nightly-68-gc1fd4d7a`, had 0 fixed.
+Last run: a local build of **mxcli PR #58** (`nightly-72-gc55e2029`, 2026-07-30) —
+**7 fixed** (#9, #10, #11, #12, #17, #23, #27), **1 improved** (#16), 3 still
+present (#21 both halves, #28). Progress across three runs of the same harness:
+`nightly-68` 0 fixed → `nightly-71` 5 → `nightly-72` 7 + 1 improved.
 
 ---
 
@@ -359,8 +360,7 @@ ListView. TraceOps has a `CodeLine` entity (LineKind / Text / Tone / SortIndex)
 used for all three blocks. This turned out better than a wrapped string anyway —
 each line carries its own tone, so `✗` failures render red and `›` steps grey.
 
-**Re-tested on mxcli `nightly-68-gc1fd4d7a` (2026-07-30): still present**, via
-`TraceOps/scripts/findings-regression.sh`.
+**FIXED by mxcli PR #58** (verified on a local build, `nightly-72-gc55e2029`, 2026-07-30). A string literal spans lines, round-trips through `describe` with the newline intact, and builds clean. The `CodeLine` child-row modelling in this app was the workaround for it and is still worth keeping — an agent log is genuinely a list of lines, not one string — but it is no longer forced.
 
 ---
 
@@ -391,8 +391,7 @@ the platform error code:
       at TraceOps.FileChange
 ```
 
-**Re-tested on mxcli `nightly-68-gc1fd4d7a` (2026-07-30): still present**, via
-`TraceOps/scripts/findings-regression.sh`.
+**FIXED by mxcli PR #58** (verified on a local build, `nightly-72-gc55e2029`, 2026-07-30). `body`, `content` and `search` all work as widget names now, and the round-trip quotes them (`container "body"`) so re-applying stays safe. Builds clean. The `appBody` / `mainContent` / `searchBox` renames in this app are no longer needed, though they are harmless.
 
 ---
 
@@ -506,8 +505,18 @@ Association delete behavior accepts only
 `DELETE_AND_REFERENCES | DELETE_BUT_KEEP_REFERENCES | DELETE_IF_NO_REFERENCES | CASCADE | PREVENT`.
 For "delete the child when the parent goes", the value is `CASCADE`.
 
-**Re-tested on mxcli `nightly-68-gc1fd4d7a` (2026-07-30): still present**, via
-`TraceOps/scripts/findings-regression.sh`.
+**IMPROVED by mxcli PR #58** (verified on a local build, `nightly-72-gc55e2029`, 2026-07-30). The grammar is deliberately unchanged — `attribute` is the documented form — but the unactionable parse error is gone. It now names the fix:
+
+```
+$ mxcli check p16.mdl
+  - line 1:38 no viable alternative at input 'addZZProbe16'
+
+  ALTER ENTITY needs the `attribute` keyword before a new attribute:
+    alter entity Module.Entity add attribute ZZProbe16: <type>;   (correct)
+    alter entity Module.Entity add ZZProbe16: <type>;             (wrong)
+```
+
+which is the right resolution for a finding whose whole content was "here is the exact syntax".
 
 ---
 
