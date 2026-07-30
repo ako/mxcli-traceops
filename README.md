@@ -281,10 +281,13 @@ is no login or user role, which is why the owner filter is pinned to a name
 
 ## Known gaps
 
-- **The tree paginates at 20 rows.** With everything expanded it reports 81 rows
-  but renders 20 plus a "Load more" button. mxcli's ListView builder hardcodes
-  `PageSize: 20` and exposes no way to change it from MDL — see
-  [FINDINGS.md](FINDINGS.md) #17. No other list in the app exceeds 20 rows.
+- **The tree needs mxcli PR #58 to render in full.** `listview … PageSize: 500`
+  is set on the tree, which mxcli silently dropped until
+  [PR #58](https://github.com/ako/mxcli/pull/58) ([FINDINGS.md](FINDINGS.md) #17).
+  With that build the tree renders all 81 rows (`rendered=81 loadMore=false`); on
+  an older mxcli the property is ignored and it falls back to 20 rows plus a
+  "Load more" button — the previous behaviour, so the line is safe to carry
+  either way. No other list in the app exceeds 20 rows.
 - **The tree is a flattened ListView, not the Mendix Tree Node widget.**
   `com.mendix.widget.web.TreeNode` *is* available in `TraceOps/widgets/`, but the
   design needs a nine-column grid row with chips, counters and a coverage bar,

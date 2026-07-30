@@ -176,10 +176,10 @@ EOF
 out=$("$MXCLI" -p "$PROJ/TraceOps.mpr" -c "DESCRIBE PAGE TraceOps.ZZ_Probe910" 2>&1)
 if grep -q "empty9 (Content: '{1}')" <<<"$out"; then
   report PRESENT 9 "Content: '' still persists as an orphaned '{1}' placeholder"
-elif grep -qE "empty9 \(Content: ''\)|empty9 \(\)" <<<"$out"; then
-  report FIXED 9 "Content: '' now persists as an empty caption"
+elif grep -qE "dynamictext empty9\s*$|empty9 \(Content: ''\)" <<<"$out"; then
+  report FIXED 9 "Content: '' persists as an empty caption (no Content property)"
 else
-  report CHANGED 9 "Content: '' persists as something new: $(grep -o "empty9[^)]*)" <<<"$out" | head -1)"
+  report CHANGED 9 "Content: '' persists as: $(grep -o 'empty9.*' <<<"$out" | head -1)"
 fi
 
 if grep -q "dollar10 (Content: '\$318')" <<<"$out"; then
@@ -190,25 +190,46 @@ else
   report CHANGED 10 "'\$318' persists as: $(grep -o "dollar10[^)]*)" <<<"$out" | head -1)"
 fi
 
-# #23 — combobox and an association. The grammar has always *accepted*
-# `Association:`; the writer drops it, and the failure surfaces at MxBuild. So the
-# test is whether it round-trips, not whether it parses.
+# #23 — combobox binding an association. Association mode needs three things: the
+# reference, the option list, and a caption attribute. Probing with `Association:`
+# alone tests the *incomplete* form, which is a different question — so both are
+# probed, and the complete one is what decides the finding.
 cat > "$WORK/p23.mdl" <<'EOF'
 create or replace page TraceOps.ZZ_Probe23 (
   params: { $Requirement: TraceOps.Requirement },
   Title: 'p', Layout: Atlas_Core.Atlas_Default)
 {
   dataview dv (DataSource: $Requirement) {
-    combobox cbParent (Label: 'Parent', Association: TraceOps.Requirement_Parent)
+    combobox cbParent (
+      Label: 'Parent',
+      Association: TraceOps.Requirement_Parent,
+      datasource: database TraceOps.Requirement,
+      CaptionAttribute: ReqId
+    )
   }
 }
 EOF
 "$MXCLI" exec "$WORK/p23.mdl" -p "$PROJ/TraceOps.mpr" >/dev/null 2>&1
 out=$("$MXCLI" -p "$PROJ/TraceOps.mpr" -c "DESCRIBE PAGE TraceOps.ZZ_Probe23" 2>&1)
-if grep -q 'Association: TraceOps.Requirement_Parent' <<<"$out"; then
-  report FIXED 23 "combobox now keeps an Association through a round-trip"
+if grep -qE 'Attribute: Requirement_Parent|Association: TraceOps.Requirement_Parent' <<<"$out"; then
+  report FIXED 23 "combobox binds an association (round-trips; build below confirms)"
 else
-  report PRESENT 23 "combobox drops Association silently (surfaces later as CE0642)"
+  report PRESENT 23 "combobox drops the association silently (surfaces later as CE0642)"
+fi
+
+# And the incomplete form should now be caught at check time rather than at build.
+out=$(syntax "create or replace page TraceOps.ZZ_Probe23b (
+  params: { \$Requirement: TraceOps.Requirement },
+  Title: 'p', Layout: Atlas_Core.Atlas_Default)
+{
+  dataview dv (DataSource: \$Requirement) {
+    combobox cbBad (Label: 'Parent', Association: TraceOps.Requirement_Parent)
+  }
+}")
+if grep -q 'MDL-WIDGET16' <<<"$out"; then
+  report FIXED 23 "  └ an incomplete association combobox is flagged at check time"
+else
+  report PRESENT 23 "  └ an incomplete association combobox still slips through to MxBuild"
 fi
 
 # One build check covers every project probe at once.
@@ -235,8 +256,8 @@ Out of scope — these are Mendix or environment behaviour, not mxcli:
   #25,#30 test-harness behaviour
   #26,#29 consequences of app design, not tool defects
 
-Expected build errors from the probes, which are the findings reproducing:
-  CE0720 at 'empty9'   -> #9   Content: '' left an orphaned {1} placeholder
-  CE0402 at 'dollar10' -> #10  '$318' parsed as a variable, left unbound
-  CE0642 at 'cbParent' -> #23  combobox Association dropped
+A clean `mx check` on the probe project means #9, #10 and #23 are all behaving:
+each probe writes the construct that used to fail, so 0 errors is the pass. If
+they regress, expect CE0720 at 'empty9', CE0402 at 'dollar10', CE0642 at
+'cbParent'.
 NOTE

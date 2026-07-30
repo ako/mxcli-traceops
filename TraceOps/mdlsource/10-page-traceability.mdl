@@ -130,15 +130,14 @@ create or replace page TraceOps.Traceability (
                 dynamictext thRel (Content: 'Release')
                 dynamictext thOwner (Content: 'Owner')
               }
-              -- NOTE: this list shows 20 rows and then a "Load more" button.
-              -- buildListViewV3 hardcodes PageSize: 20 and never reads a PageSize
-              -- property off the AST, so there is no way to raise it from MDL. As of
-              -- mxcli 0580eadf a `PageSize: 500` here is *accepted* — mxcli check,
-              -- --references and mx check all pass — and then silently discarded at
-              -- build; re-checked and it still renders 20 with Load more. See
-              -- FINDINGS.md #17. No other list in the app exceeds 20 rows.
+              -- The whole point of this view is a whole tree, so it must not
+              -- paginate. `PageSize` was silently dropped until mxcli PR #58
+              -- (FINDINGS #17); on an older build this line is ignored and the list
+              -- falls back to 20 rows plus "Load more" — the previous behaviour, so
+              -- carrying it is safe either way.
               listview lvTree (
                 DataSource: database from TraceOps.Requirement where [IsVisible = true] sort by SortIndex asc,
+                PageSize: 500,
                 Class: 'tr-panel-body tr-fill tr-lv'
               ) {
                 container treeRow (

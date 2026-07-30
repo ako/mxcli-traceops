@@ -290,19 +290,43 @@ Demo data is created by `ACT_Startup`, wired as the after-startup microflow and
 guarded to run once (it returns immediately if any requirement exists). To
 re-seed, truncate the `traceops$*` tables and restart the runtime.
 
-## Known gap
+## Known gap: the tree's page size depends on the mxcli build
 
-The traceability tree renders 20 rows and a "Load more" button rather than all 81.
-`buildListViewV3` hardcodes `PageSize: 20` and never reads a `PageSize` property
-off the AST. Re-checked on mxcli `nightly-58-g0580eadf`: an inline `PageSize: 500`
-is now *accepted* — `mxcli check`, `--references` and `mx check` all pass — and then
-silently discarded at build, which is worse than the earlier outright rejection. See
-FINDINGS.md #17. No other list in the app exceeds 20 rows.
+`listview … PageSize: 500` is set on the traceability tree. mxcli silently dropped
+that property — `buildListViewV3` hardcoded 20 and never read the AST — until
+[PR #58](https://github.com/ako/mxcli/pull/58), which fixes it (FINDINGS.md #17):
 
-It also bit the tests twice, in both directions (FINDINGS.md #30): it satisfied two
+```
+# on a PR #58 build
+after Expand all   rendered=81  loadMore=false  footer="81 of 81 requirements shown"
+
+# on an older mxcli, the property is ignored
+after Expand all   rendered=20  loadMore=true   footer="81 of 81 requirements shown"
+```
+
+Carrying the line is safe on both: an older build behaves exactly as it did before.
+
+The cap bit the tests twice, in both directions (FINDINGS.md #30): it satisfied two
 assertions while the feature under test did nothing, and it failed a third whose
-feature was working. Both smoke tests now collapse the tree or search for a row
-rather than relying on what a full expansion happens to render.
+feature was working. Both smoke tests still collapse the tree or search for a row
+rather than relying on what a full expansion happens to render — which keeps them
+honest on either build.
+
+## Adopting the rest of mxcli PR #58
+
+PR #58 fixes five findings: #9, #10, #17, #23 and #27. Only #17 is taken up so far,
+because it is the only one that is safe on both builds. The others are not adopted
+yet, deliberately:
+
+- **#23 (a combobox binding an association)** would let the requirement editor use a
+  real reference selector instead of the `ParentReqId` business-key round trip, and
+  delete the id-resolution branch in `ACT_SaveRequirement`. But an association
+  combobox **fails the build with CE0642 on any mxcli without PR #58** — unlike
+  `PageSize`, this one does not degrade quietly. Adopt it once the PR merges.
+- **#9 / #10** are already worked around (`Content: ' '` and `ContentParams`), and
+  those workarounds remain correct on every build.
+- **#27** — the `--` comments in `17-crud-domain.mdl` and `21-live-domain.mdl` work
+  everywhere; converting them back to doc comments would break on current main.
 
 ## Why `TraceOps/widgets/*.mpk` is committed
 

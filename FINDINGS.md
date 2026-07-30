@@ -9,8 +9,9 @@ FIXED / STILL PRESENT / CHANGED. Run it after any mxcli update. The remaining
 entries are Mendix semantics, Atlas CSS, environment or test methodology — mxcli
 cannot fix those, and the script says so rather than pretending to test them.
 
-Last run: mxcli `nightly-68-gc1fd4d7a` (2026-07-30) — **0 fixed, 11 still
-present**.
+Last run: a local build of **mxcli PR #58** (`nightly-71-g240e7d2c`, 2026-07-30) —
+**5 fixed** (#9, #10, #17, #23, #27), 6 still present. The previous run, on
+`nightly-68-gc1fd4d7a`, had 0 fixed.
 
 ---
 
@@ -292,8 +293,7 @@ The app contains: 29 errors.
 Note the empty container is not an option either — lint rule MPR006 flags empty
 containers as a runtime crash risk.
 
-**Re-tested on mxcli `nightly-68-gc1fd4d7a` (2026-07-30): still present**, via
-`TraceOps/scripts/findings-regression.sh`.
+**FIXED by mxcli PR #58** (`ako/mxcli`, verified on a local build of the PR, `nightly-71-g240e7d2c`, 2026-07-30). `Content: ''` now persists as a caption-less widget (`dynamictext empty9`) and builds clean — no CE0720.
 
 ---
 
@@ -331,8 +331,7 @@ dynamictext b (Content: 'x$318')                                 -- ok (not lead
 dynamictext d (Content: '{1}', ContentParams: [{1} = '$318'])    -- ok — used
 ```
 
-**Re-tested on mxcli `nightly-68-gc1fd4d7a` (2026-07-30): still present**, via
-`TraceOps/scripts/findings-regression.sh`.
+**FIXED by mxcli PR #58** (`ako/mxcli`, verified on a local build of the PR, `nightly-71-g240e7d2c`, 2026-07-30). `Content: '$318'` now round-trips as the literal `'$318'` — no CE0402. The `ContentParams` workaround is still valid, just no longer required.
 
 ---
 
@@ -587,8 +586,7 @@ the tree to a DATAGRID would fix the paging but costs the pixel-exact row markup
 that the design needs (the migrate-design-prototype skill recommends ListView for
 exactly this reason).
 
-**Re-tested on mxcli `nightly-68-gc1fd4d7a` (2026-07-30): still present**, via
-`TraceOps/scripts/findings-regression.sh`.
+**FIXED by mxcli PR #58** (`ako/mxcli`, verified on a local build of the PR, `nightly-71-g240e7d2c`, 2026-07-30). `PageSize: 500` is honoured and round-trips. The traceability tree now renders all 81 rows with no "Load more": `after Expand all  rendered=81  loadMore=false`.
 
 ---
 
@@ -871,8 +869,7 @@ which turns out to be worth doing anyway: it is the natural place for the "no
 such id", "cannot be its own parent" and cycle checks that a reference selector
 would not have given.
 
-**Re-tested on mxcli `nightly-68-gc1fd4d7a` (2026-07-30): still present**, via
-`TraceOps/scripts/findings-regression.sh`.
+**FIXED by mxcli PR #58** (`ako/mxcli`, verified on a local build of the PR, `nightly-71-g240e7d2c`, 2026-07-30). A combobox binds an association and builds with 0 errors. Association mode needs three properties, not one — `Association:`, `datasource:` (the option list) and `CaptionAttribute:` — and the new MDL-WIDGET16 check flags an incomplete one at check time rather than letting it reach MxBuild. My original probe supplied only `Association:`, so it was testing the incomplete form and wrongly read as unfixed.
 
 ---
 
@@ -1054,8 +1051,7 @@ character sequence that ends a doc comment, which terminated the block early and
 produced a fresh wall of parse errors. Don't quote comment delimiters inside a doc
 comment.
 
-**Re-tested on mxcli `nightly-68-gc1fd4d7a` (2026-07-30): still present**, via
-`TraceOps/scripts/findings-regression.sh`.
+**FIXED by mxcli PR #58** (`ako/mxcli`, verified on a local build of the PR, `nightly-71-g240e7d2c`, 2026-07-30). A doc comment between `add attribute` clauses now parses.
 
 ---
 
