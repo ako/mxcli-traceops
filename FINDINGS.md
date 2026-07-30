@@ -538,7 +538,26 @@ error, but the value does not round-trip through `describe`, so it was not
 trusted as a workaround. Gallery also drops `PageSize`/`DesktopColumns` when
 given inline on `create page`.
 
-**Status: unresolved.** The tree paginates at 20 with a working "Load more".
+**Status: unresolved — and the failure mode has since got worse.** Re-checked on
+`nightly-58-g0580eadf`: an inline `PageSize: 500` on the `listview` is now
+*accepted* rather than rejected. It parses, passes `mxcli check --references`,
+applies without a warning, and `mx check` reports 0 errors — then the value is
+silently discarded, because `buildListViewV3` still opens with a literal
+`PageSize: 20` and never reads a `PageSize` property off the AST:
+
+```go
+// mdl/executor/cmd_pages_builder_v3_widgets.go:232
+func (pb *pageBuilder) buildListViewV3(w *ast.WidgetV3) (*pages.ListView, error) {
+	lv := &pages.ListView{ ... PageSize: 20 }      // never overridden from w.Properties
+```
+
+The writer downstream *does* honour a non-zero value
+(`widget_write.go:535`, `if pageSize == 0 { pageSize = 20 }`), so only the builder
+is missing the wiring. Verified end-to-end against the running app — still 20 rows
+and a "Load more" — and the property does not round-trip through
+`describe page` either. This now belongs in the same family as #9 and #10: a
+silent writer drop that every available check passes.
+
 Every other list in the app is under 20 rows, so this affects one view. Switching
 the tree to a DATAGRID would fix the paging but costs the pixel-exact row markup
 that the design needs (the migrate-design-prototype skill recommends ListView for
