@@ -244,6 +244,15 @@ html, body, .mx-page, #content {
   background: #0c1117; border-top: 1px solid var(--tr-border-side);
   font-family: var(--tr-mono); font-size: 10px; color: var(--tr-dim);
 }
+// The live counters ride in a nested snippet (one DataView binds one object), so
+// its wrapper has to disappear into the strip rather than stack below it.
+.tr-app .tr-statusbar .mx-snippet,
+.tr-app .tr-statusbar .mx-snippet > .mx-dataview { display: contents; }
+.tr-statusbar-live {
+  display: flex; flex-direction: row; align-items: center; gap: 16px;
+  font-family: var(--tr-mono); font-size: 10px; color: var(--tr-dim);
+}
+.tr-status-warn { color: var(--tr-red); }
 
 // =============================================================================
 // Progress bars — the bucket-class idiom
@@ -402,6 +411,24 @@ html, body, .mx-page, #content {
   display: flex; align-items: center; gap: 7px; background: var(--tr-panel-bg);
   border: 1px solid var(--tr-border-chip); border-radius: 5px; padding: 5px 9px;
   font-size: 11.5px; color: var(--tr-mute); width: 210px;
+  &:focus-within { border-color: var(--tr-blue); }
+}
+// A real input now lives in the box, so strip Atlas's form-control chrome back to
+// the flat inline field the design draws.
+.tr-search .form-group { margin: 0; flex: 1; min-width: 0; }
+.tr-search .form-group > [class*='col-sm-'] { width: 100%; max-width: none; padding: 0; float: none; }
+.tr-search .control-label { display: none; }
+.tr-search-input .form-control,
+.tr-search-input input {
+  background: transparent !important; border: 0 !important; box-shadow: none !important;
+  padding: 0 !important; height: auto !important; min-height: 0 !important;
+  color: var(--tr-text) !important; font-size: 11.5px; font-family: var(--tr-sans);
+  &::placeholder { color: var(--tr-faint); }
+}
+.tr-search-clear {
+  flex: 0 0 auto; cursor: pointer; color: var(--tr-faint); font-size: 13px; line-height: 1;
+  padding: 0 2px; border-radius: 3px;
+  &:hover { color: var(--tr-text-bright); background: var(--tr-hover-bg); }
 }
 .tr-btn-ghost {
   padding: 5px 10px; font-size: 11.5px; cursor: pointer;
@@ -860,3 +887,9 @@ html, body, .mx-page, #content {
   background: transparent !important; border-color: #4a2226 !important; color: var(--tr-red) !important;
 }
 .tr-edit .mx-dataview-controls, .tr-edit .mx-listview-footer { padding: 12px 18px; border-top: 1px solid var(--tr-border); }
+
+// A DataView used purely to bring an object into scope, with no layout of its
+// own: the wrapper and its content div both dissolve so the children lay out
+// against the real parent (see FINDINGS #13).
+.tr-app .tr-stack-none,
+.tr-app .tr-stack-none > .mx-dataview-content { display: contents; }

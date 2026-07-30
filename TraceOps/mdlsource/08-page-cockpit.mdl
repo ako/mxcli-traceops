@@ -19,6 +19,11 @@ create or replace page TraceOps.Cockpit (
 
       container mainContent (Class: 'tr-content') {
 
+        -- The panel headers read their counts off AppState, so it has to be in
+        -- scope here. `display: contents` on the DataView keeps the wrapper from
+        -- disturbing the grid (FINDINGS #13).
+        dataview dvState (DataSource: microflow TraceOps.DS_AppState, Class: 'tr-stack-none') {
+
         -- MARK: KPI tiles
         listview lvKpi (
           DataSource: database from TraceOps.Kpi sort by SortIndex asc,
@@ -55,7 +60,7 @@ create or replace page TraceOps.Cockpit (
             container gapNoImplHead (Class: 'tr-panel-head') {
               container gniDot (Class: 'tr-dot tr-dot--red') { dynamictext gnd (Content: ' ') }
               dynamictext gniTitle (Content: 'No implementation yet', Class: 'tr-panel-title')
-              dynamictext gniCount (Content: '17', Class: 'tr-panel-count tr-panel-count--red')
+              dynamictext gniCount (Content: '{1}', ContentParams: [{1} = GapNoImpl], Class: 'tr-panel-count tr-panel-count--red')
               container gniSpacer (Class: 'tr-spacer') { dynamictext gns (Content: ' ') }
               dynamictext gniHint (Content: 'specified, no artifact', Class: 'tr-panel-hint')
             }
@@ -85,7 +90,7 @@ create or replace page TraceOps.Cockpit (
             container gapNoTestHead (Class: 'tr-panel-head') {
               container gntDot (Class: 'tr-dot tr-dot--amber') { dynamictext gtd (Content: ' ') }
               dynamictext gntTitle (Content: 'Built without passing test', Class: 'tr-panel-title')
-              dynamictext gntCount (Content: '14', Class: 'tr-panel-count tr-panel-count--amber')
+              dynamictext gntCount (Content: '{1}', ContentParams: [{1} = GapNoTest], Class: 'tr-panel-count tr-panel-count--amber')
               container gntSpacer (Class: 'tr-spacer') { dynamictext gts (Content: ' ') }
               dynamictext gntHint (Content: 'artifact, no green evidence', Class: 'tr-panel-hint')
             }
@@ -115,12 +120,13 @@ create or replace page TraceOps.Cockpit (
             container gapVioHead (Class: 'tr-panel-head') {
               container gvDot (Class: 'tr-dot tr-dot--violet') { dynamictext gvd (Content: ' ') }
               dynamictext gvTitle (Content: 'Guardrail violations', Class: 'tr-panel-title')
-              dynamictext gvCount (Content: '5', Class: 'tr-panel-count tr-panel-count--violet')
+              dynamictext gvCount (Content: '{1}', ContentParams: [{1} = GapViolations], Class: 'tr-panel-count tr-panel-count--violet')
               container gvSpacer (Class: 'tr-spacer') { dynamictext gvs (Content: ' ') }
               dynamictext gvHint (Content: 'blocks validation', Class: 'tr-panel-hint')
             }
             listview lvVio (
-              DataSource: database from TraceOps.Requirement where [HasViolation = true] sort by SortIndex asc,
+              DataSource: database from TraceOps.Requirement
+                where [IsLeaf = true and HasViolation = true] sort by SortIndex asc,
               Class: 'tr-panel-body tr-panel-body--tall tr-lv'
             ) {
               container vRow (
@@ -246,7 +252,7 @@ create or replace page TraceOps.Cockpit (
             container riskHead (Class: 'tr-panel-head') {
               dynamictext riskTitle (Content: 'Risks & open questions', Class: 'tr-panel-title')
               container riskSpacer (Class: 'tr-spacer') { dynamictext rs (Content: ' ') }
-              dynamictext riskCount (Content: '7', Class: 'tr-panel-count tr-panel-count--amber')
+              dynamictext riskCount (Content: '{1}', ContentParams: [{1} = RiskCount], Class: 'tr-panel-count tr-panel-count--amber')
             }
             listview lvRisk (
               DataSource: database from TraceOps.Risk sort by SortIndex asc,
@@ -293,6 +299,7 @@ create or replace page TraceOps.Cockpit (
               }
             }
           }
+        }
         }
       }
     }

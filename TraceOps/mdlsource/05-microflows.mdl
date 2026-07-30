@@ -62,15 +62,28 @@ begin
       if $State/FilterNoImpl and $Row/RollArtifacts > 0 then
         change $Row (IsVisible = false);
       end if;
-      if $State/FilterNoTest and not(($Row/RollTestsPassed = 0 and $Row/RollArtifacts > 0) or $Row/RollTestsFailed > 0) then
+      -- Same predicate as ACT_RecomputeCounters' $NoTest and the cockpit's
+      -- lvNoTest, so the chip's number is the number of rows it reveals.
+      if $State/FilterNoTest and not($Row/TestsFailed > 0 or $Row/HasNoPassingTest) then
         change $Row (IsVisible = false);
       end if;
-      if $State/FilterViolations and $Row/RollViolations = 0 then
+      if $State/FilterViolations and not($Row/HasViolation) then
         change $Row (IsVisible = false);
       end if;
-      if $State/FilterMine and $Row/OwnerName != 'M. Koelewijn' then
-        change $Row (IsVisible = false);
-      end if;
+    end if;
+
+    -- Search applies at every depth, not just to leaves like the filter chips:
+    -- a branch is hidden unless it or something under it matches. With no search
+    -- active ACT_MarkSearchMatches sets MatchesSearch true everywhere, so this is
+    -- inert rather than special-cased.
+    if not($Row/MatchesSearch) then
+      change $Row (IsVisible = false);
+    end if;
+
+    -- Ownership, like search, applies at every depth: requirements are owned at
+    -- the level they are managed, which in this data is the branches.
+    if not($Row/MatchesOwner) then
+      change $Row (IsVisible = false);
     end if;
 
     if $Row/HasChildren then
@@ -235,6 +248,9 @@ begin
   $State = call microflow TraceOps.DS_AppState ();
   change $State (FilterMine = not($State/FilterMine));
   commit $State;
+  -- The owner flag propagates up the tree, so it must be re-marked, not just
+  -- re-applied.
+  $Marked = call microflow TraceOps.ACT_MarkSearchMatches ();
   $Applied = call microflow TraceOps.ACT_ApplyTreeState ();
   return $Done;
 end;
@@ -400,12 +416,14 @@ begin
   change $State (
     SelectedReqId = 'MES-1-3',
     SelectedSessionId = 'CC-4471',
-    SelectedValidationRef = 'REQ-QMS-2-1-4',
-    LiveSessions = 2,
-    AwaitingValidation = 23,
-    GuardrailViolations = 15
+    SelectedValidationRef = 'REQ-QMS-2-1-4'
   );
   commit $State;
+
+  -- The header counters used to be assigned literals here. They are derived from
+  -- the seeded data now, so they stay right after the first edit.
+  $Baseline = call microflow TraceOps.ACT_SeedBaselineTotals ();
+  $Counted = call microflow TraceOps.ACT_RecomputeCounters ();
 
   $Applied = call microflow TraceOps.ACT_ApplyTreeState ();
   $Selected = call microflow TraceOps.ACT_ApplyInitialSelection ();

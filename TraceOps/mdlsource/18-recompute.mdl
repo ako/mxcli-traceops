@@ -369,6 +369,11 @@ begin
   end loop;
   commit $All refresh;
 
+  -- The chrome's counters are derived from the flags and rollups just written, so
+  -- they have to be refreshed here too — otherwise a header keeps reporting the
+  -- pre-edit number over a list that has already changed.
+  $Counted = call microflow TraceOps.ACT_RecomputeCounters ();
+
   -- Visibility depends on the freshly computed HasChildren and rollups.
   $Applied = call microflow TraceOps.ACT_ApplyTreeState ();
 

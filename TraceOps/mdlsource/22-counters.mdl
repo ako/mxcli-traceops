@@ -1,0 +1,243 @@
+/**
+ * TraceOps — live header counters.
+ *
+ * Every number in the chrome used to be a literal in the page source, correct
+ * only for the seed. The visible symptom was a header disagreeing with the list
+ * directly beneath it: add one requirement with no artifacts and the
+ * "No implementation" column listed 18 rows under a heading that still said 17.
+ *
+ * ACT_RecomputeCounters is the fix, and ACT_RecomputeTree calls it, so every
+ * create / edit / delete refreshes the chrome along with the tree.
+ *
+ * Two things deliberately do *not* become live:
+ *
+ *  - The baseline strip. The design shows two scales at once — "1 248
+ *    requirements in baseline" against a tree that models 81 of them in detail —
+ *    and flattening that to 81 would misreport the baseline just as badly as
+ *    leaving it stale misreports the tree. Those figures move to Baseline, as
+ *    data, and stay baseline-scoped.
+ *  - "Agent spend today". There is no cost data behind it to derive.
+ *
+ * Counts use `count($list)`, which returns an Integer. `sum()` returns a Decimal
+ * and there is no Decimal-to-Integer conversion (FINDINGS #22), so sums into
+ * Integer attributes are accumulated in a loop instead, and percentages go
+ * through ACT_IntDiv.
+ */
+
+-- MARK: Baseline figures
+
+/**
+ * Moves the design's baseline-scale headline numbers onto the current Baseline.
+ *
+ * Idempotent, and safe to call on every startup: it overwrites the same five
+ * attributes on whichever baseline is flagged current.
+ */
+create or replace microflow TraceOps.ACT_SeedBaselineTotals ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  retrieve $Current from TraceOps.Baseline where [IsCurrent = true] limit 1;
+  if $Current = empty then
+    return $Done;
+  end if;
+
+  change $Current (
+    ReqTotal = 1248,
+    ArtifactTotal = 2104,
+    TestTotal = 2026,
+    VerifiedPercent = 58,
+    BuiltPercent = 71
+  );
+  commit $Current;
+
+  return $Done;
+end;
+/
+
+-- MARK: Live counters
+--
+-- Defined callee-first: a script cannot forward-reference a microflow it calls.
+
+/**
+ * Rewrites the cockpit KPI tiles from the live counters.
+ *
+ * The tiles are rows rather than a fixed layout, so they are matched by Label.
+ * Four of the six are derivable; "Requirements in baseline" stays baseline-scoped
+ * and "Agent spend today" has no underlying data, so both are left alone.
+ *
+ * BarBucket is the 0..20 width class the theme generates, so it is the percentage
+ * scaled by a fifth.
+ */
+create or replace microflow TraceOps.ACT_RefreshKpiTiles ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  $State = call microflow TraceOps.DS_AppState ();
+
+  retrieve $Mapped from TraceOps.Kpi where [Label = 'Mapped to guardrails'] limit 1;
+  if $Mapped != empty then
+    $B = call microflow TraceOps.ACT_IntDiv (
+      Numerator = $State/MappedPercent, Denominator = 5);
+    change $Mapped (
+      Value = toString($State/MappedPercent) + '%',
+      Sub = toString($State/LeafCount) + ' modelled requirements',
+      BarBucket = $B
+    );
+    commit $Mapped;
+  end if;
+
+  retrieve $Implemented from TraceOps.Kpi where [Label = 'Implemented'] limit 1;
+  if $Implemented != empty then
+    $B2 = call microflow TraceOps.ACT_IntDiv (
+      Numerator = $State/ImplementedPercent, Denominator = 5);
+    change $Implemented (
+      Value = toString($State/ImplementedPercent) + '%',
+      Sub = toString($State/GapNoImpl) + ' requirements without artifacts',
+      BarBucket = $B2
+    );
+    commit $Implemented;
+  end if;
+
+  retrieve $VerifiedTile from TraceOps.Kpi where [Label = 'Verified by test'] limit 1;
+  if $VerifiedTile != empty then
+    $B3 = call microflow TraceOps.ACT_IntDiv (
+      Numerator = $State/VerifiedPct, Denominator = 5);
+    change $VerifiedTile (
+      Value = toString($State/VerifiedPct) + '%',
+      Sub = 'evidence accepted by a human',
+      BarBucket = $B3
+    );
+    commit $VerifiedTile;
+  end if;
+
+  retrieve $VioTile from TraceOps.Kpi where [Label = 'Guardrail violations'] limit 1;
+  if $VioTile != empty then
+    $VioBar = call microflow TraceOps.ACT_IntDiv (
+      Numerator = $State/GuardrailViolations, Denominator = 1);
+    change $VioTile (
+      Value = toString($State/GuardrailViolations),
+      Sub = toString($State/GapViolations) + ' requirements affected',
+      BarBucket = $VioBar
+    );
+    commit $VioTile;
+  end if;
+
+  return $Done;
+end;
+/
+
+/**
+ * Recomputes every counter shown in the chrome from the data it describes.
+ *
+ * Called by ACT_RecomputeTree (so it follows every requirement write) and by
+ * ACT_Startup. Cheap: a dozen counted retrieves, no per-row loop except the two
+ * evidence sums.
+ */
+create or replace microflow TraceOps.ACT_RecomputeCounters ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  -- No `declare` for the counts below: an aggregate declares its own output
+  -- variable, so declaring it first is CE0111 — exactly like `$x = call microflow`.
+
+  $State = call microflow TraceOps.DS_AppState ();
+
+  -- Each counter's constraint is deliberately a copy of the constraint on the
+  -- list it labels. That is the whole point: a header derived from a *different*
+  -- predicate than its list is the original bug wearing a computed disguise.
+  -- lvNoImpl, lvNoTest, lvVio on the cockpit and the four tree chips are the
+  -- lists these have to agree with.
+  retrieve $All from TraceOps.Requirement;
+  retrieve $NoImpl from TraceOps.Requirement
+    where [IsLeaf = true and RollArtifacts = 0];
+  retrieve $NoTest from TraceOps.Requirement
+    where [IsLeaf = true and (TestsFailed > 0 or HasNoPassingTest = true)];
+  -- Leaf-scoped like the other two gap columns: a branch "has a violation" only
+  -- because something under it does, so counting branches would report the same
+  -- breach once per level above it.
+  retrieve $VioRows from TraceOps.Requirement
+    where [IsLeaf = true and HasViolation = true];
+  retrieve $Mine from TraceOps.Requirement
+    where [OwnerName = $State/CurrentUserName];
+
+  -- Two different quantities, and the design distinguishes them too: the chips
+  -- and the cockpit column count *requirements* that carry a violation, while the
+  -- top bar and status bar say "guardrail violations" and mean violated
+  -- mappings — one requirement can breach several guardrails.
+  retrieve $Vios from TraceOps.GuardrailLink where [IsViolation = true];
+
+  retrieve $Guards from TraceOps.Guardrail;
+  retrieve $Releases from TraceOps.Release;
+  retrieve $Risks from TraceOps.Risk;
+  retrieve $Running from TraceOps.AgentSession
+    where [Status = TraceOps.SessionStatus.running];
+  retrieve $Pending from TraceOps.ValidationItem
+    where [Decision = TraceOps.ValidationDecision.pending];
+
+  -- Assurance percentages are over leaves: a branch is not a unit of delivery,
+  -- it is the sum of its children, so counting branches would double-count.
+  retrieve $LeafRows from TraceOps.Requirement where [HasChildren = false];
+  retrieve $MappedLeaves from TraceOps.Requirement
+    where [HasChildren = false and RollMapped > 0];
+  retrieve $ImplLeaves from TraceOps.Requirement
+    where [HasChildren = false and RollArtifacts > 0];
+  retrieve $VerifiedLeaves from TraceOps.Requirement
+    where [HasChildren = false and Status = TraceOps.ReqStatus.verified];
+
+  -- count() is an aggregate activity, not an expression function, so every count
+  -- has to land in its own variable before the `change` below can use it
+  -- (mxcli check MDL044 → MxBuild CE0117).
+  set $Leaves = count($LeafRows);
+  set $Mapped = count($MappedLeaves);
+  set $Impl = count($ImplLeaves);
+  set $Verified = count($VerifiedLeaves);
+  set $Reqs = count($All);
+  set $NoImplN = count($NoImpl);
+  set $NoTestN = count($NoTest);
+  set $VioN = count($Vios);
+  set $VioRowN = count($VioRows);
+  set $MineN = count($Mine);
+  set $GuardN = count($Guards);
+  set $RelN = count($Releases);
+  set $RiskN = count($Risks);
+  set $RunN = count($Running);
+  set $PendN = count($Pending);
+
+  -- Round-to-nearest percentages: ACT_IntDiv is floor division, so (200n + d)
+  -- over 2d gives round(100n / d). See 18-recompute.mdl.
+  $MappedPct = call microflow TraceOps.ACT_IntDiv (
+    Numerator = $Mapped * 200 + $Leaves, Denominator = $Leaves * 2);
+  $ImplPct = call microflow TraceOps.ACT_IntDiv (
+    Numerator = $Impl * 200 + $Leaves, Denominator = $Leaves * 2);
+  $VerifiedPct = call microflow TraceOps.ACT_IntDiv (
+    Numerator = $Verified * 200 + $Leaves, Denominator = $Leaves * 2);
+
+  change $State (
+    ReqCount = $Reqs,
+    GapNoImpl = $NoImplN,
+    GapNoTest = $NoTestN,
+    GapViolations = $VioRowN,
+    OpenGapCount = $NoImplN + $NoTestN + $VioRowN,
+    MineCount = $MineN,
+    GuardrailCount = $GuardN,
+    ReleaseCount = $RelN,
+    RiskCount = $RiskN,
+    LeafCount = $Leaves,
+    LiveSessions = $RunN,
+    AwaitingValidation = $PendN,
+    GuardrailViolations = $VioN,
+    MappedPercent = $MappedPct,
+    ImplementedPercent = $ImplPct,
+    VerifiedPct = $VerifiedPct
+  );
+  commit $State refresh;
+
+  $Kpis = call microflow TraceOps.ACT_RefreshKpiTiles ();
+
+  return $Done;
+end;
+/
+

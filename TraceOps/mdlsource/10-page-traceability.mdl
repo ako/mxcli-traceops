@@ -56,7 +56,7 @@ create or replace page TraceOps.Traceability (
             ) {
               container fniDot (Class: 'tr-dot tr-dot--red') { dynamictext fnid (Content: ' ') }
               dynamictext fniLabel (Content: 'No implementation')
-              dynamictext fniCount (Content: '17', Class: 'tr-filter-count')
+              dynamictext fniCount (Content: '{1}', ContentParams: [{1} = GapNoImpl], Class: 'tr-filter-count')
             }
             container filtNoTest (
               OnClick: microflow TraceOps.ACT_FilterNoTest,
@@ -65,7 +65,7 @@ create or replace page TraceOps.Traceability (
             ) {
               container fntDot (Class: 'tr-dot tr-dot--amber') { dynamictext fntd (Content: ' ') }
               dynamictext fntLabel (Content: 'No passing test')
-              dynamictext fntCount (Content: '14', Class: 'tr-filter-count')
+              dynamictext fntCount (Content: '{1}', ContentParams: [{1} = GapNoTest], Class: 'tr-filter-count')
             }
             container filtVio (
               OnClick: microflow TraceOps.ACT_FilterViolations,
@@ -74,7 +74,7 @@ create or replace page TraceOps.Traceability (
             ) {
               container fvDot (Class: 'tr-dot tr-dot--violet') { dynamictext fvd (Content: ' ') }
               dynamictext fvLabel (Content: 'Violations')
-              dynamictext fvCount (Content: '5', Class: 'tr-filter-count')
+              dynamictext fvCount (Content: '{1}', ContentParams: [{1} = GapViolations], Class: 'tr-filter-count')
             }
             container filtMine (
               OnClick: microflow TraceOps.ACT_FilterMine,
@@ -83,12 +83,23 @@ create or replace page TraceOps.Traceability (
             ) {
               container fmDot (Class: 'tr-dot tr-dot--blue') { dynamictext fmd (Content: ' ') }
               dynamictext fmLabel (Content: 'My requirements')
-              dynamictext fmCount (Content: '34', Class: 'tr-filter-count')
+              dynamictext fmCount (Content: '{1}', ContentParams: [{1} = MineCount], Class: 'tr-filter-count')
             }
 
             container searchBox (Class: 'tr-search') {
               dynamictext searchIcon (Content: '⌕')
-              dynamictext searchTxt (Content: 'Filter by id, text, owner…')
+              textbox searchField (
+                Attribute: SearchText,
+                Placeholder: 'Filter by id, text, owner…',
+                OnChange: microflow TraceOps.ACT_ApplySearch(State: $currentObject),
+                Class: 'tr-search-input'
+              )
+              container searchClear (
+                OnClick: microflow TraceOps.ACT_ClearSearch(State: $currentObject),
+                Class: 'tr-search-clear'
+              ) {
+                dynamictext searchClearTxt (Content: '×')
+              }
             }
             container collapseBtn (OnClick: microflow TraceOps.ACT_CollapseAll, Class: 'tr-btn-ghost') {
               dynamictext collapseTxt (Content: 'Collapse all')
@@ -209,8 +220,8 @@ create or replace page TraceOps.Traceability (
               }
               container treeFoot (Class: 'tr-panel-cta') {
                 dynamictext treeFootTxt (
-                  Content: '{1} rows shown · 1 248 requirements in baseline',
-                  ContentParams: [{1} = VisibleRowCount]
+                  Content: '{1} of {2} requirements shown',
+                  ContentParams: [{1} = VisibleRowCount, {2} = ReqCount]
                 )
               }
             }

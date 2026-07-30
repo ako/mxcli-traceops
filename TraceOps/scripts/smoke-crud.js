@@ -10,6 +10,30 @@
  */
 const { chromium } = require('playwright-core');
 
+/**
+ * Reset the shared view state before asserting anything.
+ *
+ * AppState is a single global row, so an active search or filter chip persists
+ * across page loads and across test runs — the same property that lets the app
+ * remember your view. A test that assumes a clean tree has to say so.
+ */
+async function resetView(p) {
+  const field = await p.$eval('.tr-search input', (e) => e.value).catch(() => '');
+  if (field !== '') {
+    await p.click('.tr-search-clear');
+    await p.waitForTimeout(4000);
+  }
+  for (const chip of ['No implementation', 'No passing test', 'Violations', 'My requirements']) {
+    const on = await p.$$eval('.tr-filter', (els, label) =>
+      els.some((e) => e.textContent.includes(label) && e.className.includes('tr-filter--on')), chip);
+    if (on) {
+      await p.click(`.tr-filter:has-text("${chip}")`);
+      await p.waitForTimeout(3000);
+    }
+  }
+}
+
+
 const BASE = process.env.TRACEOPS_URL || 'http://127.0.0.1:8080';
 const NEW_ID = 'REQ-SMOKE-1';
 
@@ -45,6 +69,7 @@ const footer = (p) => p.$eval('.tr-panel-cta', (e) => e.textContent.trim()).catc
   await p.goto(`${BASE}/p/traceability`, { waitUntil: 'networkidle', timeout: 90000 });
   await p.waitForSelector('.tr-tree-row', { timeout: 30000 });
   await p.waitForTimeout(3000);
+  await resetView(p);
 
   // Start from a known shape.
   await p.click('.tr-btn-ghost:has-text("Collapse all")');

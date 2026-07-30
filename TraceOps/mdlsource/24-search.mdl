@@ -1,0 +1,151 @@
+/**
+ * TraceOps — tree search.
+ *
+ * The toolbar's "Filter by id, text, owner…" box was a styled container holding
+ * two text widgets: no input, no action. This makes it real.
+ *
+ * A flat list of matches would be the easy version and the wrong one — a
+ * requirement means little without its place in the tree. So a match keeps its
+ * whole ancestor chain on screen, and those ancestors are forced open so the
+ * match is actually reachable.
+ *
+ * That needs two passes, because a parent's visibility depends on its
+ * descendants:
+ *
+ *   1. top-down, mark each row against the search text
+ *   2. bottom-up, OR each row's flag into its parent
+ *
+ * MatchesSearch carries both — self-match after pass 1, "self or any descendant"
+ * after pass 2 — and ACT_ApplyTreeState then treats it as one more visibility
+ * condition alongside the expansion state and the filter chips.
+ */
+
+-- MARK: Match marking
+
+/**
+ * Recomputes MatchesSearch and MatchesOwner for every requirement.
+ *
+ * With a blank search every row matches, which makes the flag inert and leaves
+ * ACT_ApplyTreeState's normal behaviour untouched.
+ *
+ * Matching is case-insensitive across id, title and owner — the three things the
+ * design's placeholder text promises.
+ */
+create or replace microflow TraceOps.ACT_MarkSearchMatches ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+  declare $Needle String = '';
+  declare $Level Integer = 0;
+  declare $Hit Boolean = false;
+  declare $Owned Boolean = false;
+
+  $State = call microflow TraceOps.DS_AppState ();
+  set $Needle = toLowerCase(trim($State/SearchText));
+
+  retrieve $All from TraceOps.Requirement;
+
+  -- Pass 1 — self-matches for both flags. Each is inert (true everywhere) when
+  -- its control is off, so ACT_ApplyTreeState needs no special cases.
+  loop $Row in $All
+  begin
+    if $Needle = '' then
+      set $Hit = true;
+    else
+      set $Hit = contains(toLowerCase($Row/ReqId), $Needle)
+        or contains(toLowerCase($Row/Title), $Needle)
+        or contains(toLowerCase($Row/OwnerName), $Needle);
+    end if;
+
+    if $State/FilterMine then
+      set $Owned = $Row/OwnerName = $State/CurrentUserName;
+    else
+      set $Owned = true;
+    end if;
+
+    change $Row (MatchesSearch = $Hit, MatchesOwner = $Owned);
+  end loop;
+  commit $All;
+
+  if $Needle = '' and not($State/FilterMine) then
+    return $Done;
+  end if;
+
+  -- Pass 2 — OR each level's flags up into its parents, deepest first, so a
+  -- match at any depth pulls its whole ancestor chain into view. Committing as we
+  -- go because the retrieves below are database queries.
+  set $Level = 7;
+  while $Level >= 0
+  begin
+    retrieve $Parents from TraceOps.Requirement
+      where [Depth = $Level and HasChildren = true];
+    loop $Parent in $Parents
+    begin
+      retrieve $SearchKids from TraceOps.Requirement
+        where [TraceOps.Requirement_Parent = $Parent and MatchesSearch = true];
+      if $SearchKids != empty then
+        change $Parent (MatchesSearch = true, IsExpanded = true);
+        commit $Parent;
+      end if;
+
+      retrieve $OwnerKids from TraceOps.Requirement
+        where [TraceOps.Requirement_Parent = $Parent and MatchesOwner = true];
+      if $OwnerKids != empty then
+        change $Parent (MatchesOwner = true, IsExpanded = true);
+        commit $Parent;
+      end if;
+    end loop;
+    set $Level = $Level - 1;
+  end while;
+
+  return $Done;
+end;
+/
+
+-- MARK: Toolbar actions
+
+/**
+ * Runs the search currently typed in the toolbar.
+ *
+ * Takes the AppState object as a parameter rather than re-fetching it, and that
+ * is load-bearing. The DataView holds the typed text as an *uncommitted* change;
+ * DS_AppState does a database retrieve, so a flow that fetched its own copy read
+ * the previously committed value — an empty string — and searching appeared to do
+ * nothing at all while the field plainly held the text.
+ */
+create or replace microflow TraceOps.ACT_ApplySearch ($State: TraceOps.AppState)
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  commit $State;
+
+  $Marked = call microflow TraceOps.ACT_MarkSearchMatches ();
+  $Applied = call microflow TraceOps.ACT_ApplyTreeState ();
+  return $Done;
+end;
+/
+
+/**
+ * Clears the search and returns the tree to the plain expansion/filter view.
+ *
+ * The expansions that the search forced open are deliberately left open: they
+ * are where the user was last looking, and silently re-collapsing them would
+ * throw away the result they just found.
+ */
+create or replace microflow TraceOps.ACT_ClearSearch ($State: TraceOps.AppState)
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  -- Same reason as ACT_ApplySearch: this has to clear the object the DataView is
+  -- bound to, with a client refresh, or the field keeps showing the old text.
+  change $State (SearchText = '');
+  commit $State refresh;
+
+  $Marked = call microflow TraceOps.ACT_MarkSearchMatches ();
+  $Applied = call microflow TraceOps.ACT_ApplyTreeState ();
+
+  return $Done;
+end;
+/

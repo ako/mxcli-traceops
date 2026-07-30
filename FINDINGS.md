@@ -951,3 +951,201 @@ check('delete removed nothing else', after.join(' ') === before.join(' '));
 **Takeaway:** a denormalised flag is part of the UI's state, not scratch space.
 And #20's lesson generalises — it is not enough to assert that the thing you
 changed changed; assert that nothing else did.
+
+---
+
+## 27. A doc comment between `add attribute` clauses is a syntax error — and it shipped
+
+**Severity:** medium — it silently broke the repo's "re-apply from scratch" claim
+**Phase:** 4 (live counters)
+
+`/** … */` doc comments are accepted before a statement and between attributes
+*inside* `create entity`, so putting one between two `add attribute` clauses of an
+`alter entity` looks obviously fine. It is not:
+
+```
+$ mxcli check t1.mdl
+alter entity TraceOps.ValidationItem
+  add attribute Zz1: string(10)
+  /** doc comment between add clauses */
+  add attribute Zz2: string(10);
+→ line 4:2 no viable alternative at input '/** doc comment between add clauses */add'
+```
+
+Isolated against a control: the same file with the comment removed, and one with an
+enum default in the same position, both pass. It is the comment placement alone.
+
+**How it shipped.** `17-crud-domain.mdl` was committed in exactly this state. The
+attributes were all *in* the project, because each had been applied individually —
+by `-c "ALTER ENTITY …"`, or before the comments were written — so every downstream
+check was green. The file itself had not been parsed as a whole since the comments
+went in:
+
+```
+$ mxcli check mdlsource/17-crud-domain.mdl
+  - line 26:2 no viable alternative at input '/**\n * The parent, as the parent's ReqId …'
+```
+
+Nothing catches this. `mx check` validates the *project*, `lint` validates the
+project, and the app built and ran perfectly. Only re-applying the source from
+scratch — the thing the repo claims you can do — would have failed.
+
+**Fix:** `--` line comments inside `alter entity`, and a guard so it cannot recur:
+
+```
+$ bash scripts/check-mdl.sh
+ok    mdlsource/01-domain-model.mdl
+...
+24 file(s) checked, 0 failed
+```
+
+**Takeaway:** "the model is correct" and "the sources that produce the model are
+correct" are different claims, and only the first one has a tool pointed at it by
+default. If the source of truth is a directory of scripts, something has to check
+the directory.
+
+**Second-order trap while writing this up:** the fix comment itself contained the
+character sequence that ends a doc comment, which terminated the block early and
+produced a fresh wall of parse errors. Don't quote comment delimiters inside a doc
+comment.
+
+---
+
+## 28. `count()` is an activity, not an expression — and it declares its own variable
+
+**Severity:** low — caught pre-build, unlike #22
+**Phase:** 4 (live counters)
+
+Aggregates read like functions and are not. Using one inline in a `change`:
+
+```
+change $State (ReqCount = count($All), GapNoImpl = count($NoImpl), …);
+```
+
+`mxcli check` rejects it with a precise diagnosis, which is a real improvement over
+finding out at MxBuild:
+
+```
+✗ change 'State' attribute 'GuardrailViolations' calls 'count()', which is not a
+  Mendix expression function — the build fails CE0117 "Error(s) in expression" [MDL044]
+  → 'count' is an aggregate activity, not an expression function. Assign it to a
+    variable first: $n = count($List); then use $n in the expression.
+```
+
+So every count needs its own variable. The follow-on trap: `set $n = count($List)`
+**declares** `$n`, exactly like `$x = call microflow …` in #22, so pre-declaring it
+is an error:
+
+```
+  declare $RelN Integer = 0;
+  set $RelN = count($Releases);
+→ duplicate variable name '$RelN' — aggregate list output variable is already
+  declared in this scope (CE0111)
+```
+
+Useful counterpart to #22: `count()` returns an **Integer**, so counts are safe to
+assign to Integer attributes. `sum()` returns a Decimal and hits the no-conversion
+wall, so sums into Integer attributes still need an accumulator loop.
+
+---
+
+## 29. A DataView's edit is uncommitted, so a microflow that re-fetches the object cannot see it
+
+**Severity:** high — the feature appears completely inert, with no error anywhere
+**Phase:** 4 (live counters)
+
+The new search box did nothing. Not "wrong results" — nothing: type, press Enter,
+tree unchanged. No client error, no runtime error, `mx check` clean, and the
+`OnChange` was demonstrably persisted on the widget:
+
+```
+$ mxcli -p TraceOps.mpr -c "DESCRIBE PAGE TraceOps.Traceability"
+  textbox searchField (
+    Attribute: SearchText,
+    OnChange: microflow TraceOps.ACT_ApplySearch,
+```
+
+The input really did hold the text — checked in the DOM — and the DataView was
+editable, not read-only:
+
+```json
+{"value": "trace", "dvCls": "mx-dataview mx-name-dvState …", "dvReadOnly": false}
+```
+
+But the database did not:
+
+```
+$ psql -c "SELECT '['||coalesce(searchtext,'NULL')||']' FROM \"traceops$appstate\";"
+ []
+```
+
+**Cause.** The flow fetched its own copy of the object:
+
+```
+create or replace microflow TraceOps.ACT_ApplySearch ()
+begin
+  $State = call microflow TraceOps.DS_AppState ();   -- retrieves from the DATABASE
+```
+
+A DataView holds edits **uncommitted** until something commits them. `DS_AppState`
+does a database retrieve, so the flow read the last *committed* value — an empty
+string — while the field on screen plainly held the text. Every part worked; they
+just weren't looking at the same object.
+
+**Fix:** take the object as a parameter, from the DataView, and commit it.
+
+```
+create or replace microflow TraceOps.ACT_ApplySearch ($State: TraceOps.AppState)
+begin
+  commit $State;
+  ...
+```
+
+with the page passing `$currentObject`:
+
+```
+OnChange: microflow TraceOps.ACT_ApplySearch(State: $currentObject),
+```
+
+**Takeaway:** any flow triggered by an input widget must be handed the edited
+object. A convenience "get the state" datasource microflow is the wrong thing to
+call from a widget action, because it re-reads what is on disk rather than what is
+on screen. The mirror image of #20: there, a commit without `refresh` meant the
+*client* never saw the server's change; here, a re-fetch meant the *server* never
+saw the client's.
+
+---
+
+## 30. Two false-passing tests, both hidden by the PageSize cap
+
+**Severity:** methodology — worth more than the bugs it hid
+**Phase:** 4 (live counters)
+
+The search assertions passed while the search was completely inert (#29):
+
+```
+PASS  search narrows the tree  — 20 rows: MES MES-1 MES-1-1 REQ-MES-1-1-1 …
+PASS  every visible row is a match or an ancestor of one  — 1 direct match(es) of 20 rows
+```
+
+`20 < 81`, so "narrows the tree" was satisfied — by the ListView's 20-row page cap
+(#17), not by the feature. The second check was written loosely enough
+(`titles.length >= hits.length`) to be true of any tree at all. Two green lines,
+zero working search. A third check failed only because 20 → 20 gave nothing to
+compare.
+
+The same cap then produced the opposite error, a genuine feature failing its test:
+`the accepted requirement is verified in the tree — status="null"` — the row was
+past row 20 and simply not in the DOM. The data was right the whole time.
+
+**Fixes, in the test:**
+
+- collapse the tree first, so the visible set is small and exact — the assertion
+  became `searchRows.join(' ') === 'MES MES-2'`, which only a working search can
+  satisfy;
+- reach a deep row by searching for it rather than by expanding everything.
+
+**Takeaway:** an assertion that a number got *smaller*, or that a list is
+*non-empty*, will be satisfied by a platform quirk sooner or later. Assert the
+exact expected set. And when a test and a feature disagree, the test is a suspect
+too — here it was the culprit twice and the victim once.

@@ -85,7 +85,7 @@ create or replace snippet TraceOps.SNIPPET_Sidebar
     ) {
       dynamictext icCockpit (Content: '◈', Class: 'tr-nav-icon')
       dynamictext lbCockpit (Content: 'Cockpit', Class: 'tr-nav-label')
-      dynamictext bgCockpit (Content: '52', Class: 'tr-nav-badge')
+      dynamictext bgCockpit (Content: '{1}', ContentParams: [{1} = OpenGapCount], Class: 'tr-nav-badge')
     }
 
     container navTrace (
@@ -95,7 +95,7 @@ create or replace snippet TraceOps.SNIPPET_Sidebar
     ) {
       dynamictext icTrace (Content: '⌸', Class: 'tr-nav-icon')
       dynamictext lbTrace (Content: 'Traceability', Class: 'tr-nav-label')
-      dynamictext bgTrace (Content: '1 248', Class: 'tr-nav-badge')
+      dynamictext bgTrace (Content: '{1}', ContentParams: [{1} = ReqCount], Class: 'tr-nav-badge')
     }
 
     container navArch (
@@ -105,7 +105,7 @@ create or replace snippet TraceOps.SNIPPET_Sidebar
     ) {
       dynamictext icArch (Content: '⬡', Class: 'tr-nav-icon')
       dynamictext lbArch (Content: 'Guardrails', Class: 'tr-nav-label')
-      dynamictext bgArch (Content: '12', Class: 'tr-nav-badge')
+      dynamictext bgArch (Content: '{1}', ContentParams: [{1} = GuardrailCount], Class: 'tr-nav-badge')
     }
 
     container navSessions (
@@ -135,7 +135,7 @@ create or replace snippet TraceOps.SNIPPET_Sidebar
     ) {
       dynamictext icReleases (Content: '▤', Class: 'tr-nav-icon')
       dynamictext lbReleases (Content: 'Releases', Class: 'tr-nav-label')
-      dynamictext bgReleases (Content: '4', Class: 'tr-nav-badge')
+      dynamictext bgReleases (Content: '{1}', ContentParams: [{1} = ReleaseCount], Class: 'tr-nav-badge')
     }
 
     dynamictext healthLabel (Content: 'Health by area', Class: 'tr-side-label tr-side-label--tight')
@@ -193,6 +193,27 @@ create or replace snippet TraceOps.SNIPPET_Sidebar
   }
 }
 
+/**
+ * The live half of the status bar.
+ *
+ * Split out because the strip mixes two data sources: the baseline's own totals
+ * and the modelled tree's current state. A DataView binds one object, so the
+ * live counters ride in a nested snippet rather than forcing everything onto
+ * one entity.
+ */
+create or replace snippet TraceOps.SNIPPET_StatusBarLive
+{
+  dataview dvStatusLive (DataSource: microflow TraceOps.DS_AppState, Class: 'tr-statusbar-live') {
+    dynamictext slModelled (Content: '{1} modelled', ContentParams: [{1} = ReqCount])
+    dynamictext slGuards (Content: '{1} guardrails', ContentParams: [{1} = GuardrailCount])
+    dynamictext slViolations (
+      Content: '{1} violations',
+      ContentParams: [{1} = GuardrailViolations],
+      DynamicClasses: 'if $currentObject/GuardrailViolations > 0 then ''tr-status-warn'' else '''''
+    )
+  }
+}
+
 -- MARK: Status bar
 
 /**
@@ -200,16 +221,21 @@ create or replace snippet TraceOps.SNIPPET_Sidebar
  */
 create or replace snippet TraceOps.SNIPPET_StatusBar
 {
-  dataview dvStatus (DataSource: microflow TraceOps.DS_AppState, Class: 'tr-statusbar') {
-    dynamictext stBaseline (Content: 'baseline 4.2-RC3')
-    dynamictext stReqs (Content: '1 248 reqs')
-    dynamictext stGuards (Content: '12 guardrails')
-    dynamictext stArtifacts (Content: '2 104 artifacts')
-    dynamictext stTests (Content: '2 026 tests')
-    dynamictext stVerified (Content: 'verified 58%')
-    dynamictext stBuilt (Content: 'built 71%')
-    dynamictext stViolations (Content: '{1} violations', ContentParams: [{1} = GuardrailViolations])
+  -- This strip is scoped to the baseline, so its totals are the *baseline's* —
+  -- 1 248 requirements, of which the tree models 81 in detail. They come off the
+  -- Baseline row rather than being literals here. The two figures that describe
+  -- the modelled tree, guardrails and violations, are live.
+  dataview dvStatus (
+    DataSource: microflow TraceOps.DS_CurrentBaseline,
+    Class: 'tr-statusbar'
+  ) {
+    dynamictext stBaseline (Content: 'baseline {1}', ContentParams: [{1} = Tag])
+    dynamictext stReqs (Content: '{1} reqs in baseline', ContentParams: [{1} = ReqTotal])
+    dynamictext stArtifacts (Content: '{1} artifacts', ContentParams: [{1} = ArtifactTotal])
+    dynamictext stTests (Content: '{1} tests', ContentParams: [{1} = TestTotal])
+    dynamictext stVerified (Content: 'verified {1}%', ContentParams: [{1} = VerifiedPercent])
+    dynamictext stBuilt (Content: 'built {1}%', ContentParams: [{1} = BuiltPercent])
     container stSpacer (Class: 'tr-spacer') { dynamictext sx (Content: ' ') }
-    dynamictext stEvent (Content: 'last agent event 11 s ago')
+    snippetcall stLive (Snippet: TraceOps.SNIPPET_StatusBarLive)
   }
 }

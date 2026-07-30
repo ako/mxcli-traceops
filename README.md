@@ -114,6 +114,10 @@ node scripts/capture-screenshots.js
 | `18-recompute.mdl` | `ACT_RecomputeTree` + the integer-division helper |
 | `19-crud-flows.mdl` | new / edit / save / cancel / delete |
 | `20-page-requirement-edit.mdl` | the requirement editor pop-up |
+| `21-live-domain.mdl` | schema for live counters, sign-off and search |
+| `22-counters.mdl` | `ACT_RecomputeCounters` + the KPI tiles |
+| `23-validation-flows.mdl` | accept / send back, and the queue advance |
+| `24-search.mdl` | tree search and the subtree-aware owner filter |
 
 The numbering is the apply order — later files depend on earlier ones.
 
@@ -209,12 +213,71 @@ That last check is not decoration. The subtree walk originally marked rows with
 every delete quietly took out the selected requirement's subtree as well. All the
 other assertions passed while it did ([FINDINGS.md](FINDINGS.md) #26).
 
+## Sign-off, search and live counters
+
+Three things the design draws as static were made real, because once the data can
+change a picture of a number is worse than no number at all.
+
+**The counters follow the data.** Every figure in the chrome — the sidebar badges,
+the four filter chips, the cockpit's gap-column headers, the KPI tiles, the top bar
+— used to be a literal in the page source, correct only for the seed. The visible
+symptom was a header disagreeing with the list directly beneath it: add one
+requirement with no artifacts and the "No implementation" column listed 18 rows
+under a heading that still said 17. `ACT_RecomputeCounters` derives all of them,
+and `ACT_RecomputeTree` calls it, so a create, edit, delete or sign-off refreshes
+the chrome with the tree.
+
+Each counter's constraint is a deliberate copy of the constraint on the list it
+labels — a header computed from a *different* predicate than its list is the same
+bug wearing a disguise, and two of them were wrong that way before the tests caught
+it.
+
+The **baseline strip stays baseline-scoped**. The design shows two scales at once:
+"1 248 requirements in baseline" against a tree that models 81 of them in detail.
+Flattening that to 81 would misreport the baseline as badly as leaving it stale
+misreports the tree, so those totals moved onto the `Baseline` entity as data and
+the tree's own footer now counts the tree.
+
+**The validation queue decides.** `✓ Accept evidence` and `✗ Send back to agent`
+were wired to navigation microflows — they opened another view, and `ValidationItem`
+had nowhere to record an outcome. Now the decision is recorded with who made it,
+the item leaves the queue, and the requirement it refers to becomes `verified`,
+which moves its ancestors' coverage bars and the assurance percentages. It is the
+one action that closes the loop the design is about.
+
+**Search works.** The toolbar box was a styled container with no input widget. It
+is a real field now, matching id, title and owner case-insensitively. A match keeps
+its whole ancestor chain on screen and those ancestors are forced open — a
+requirement means little without its place in the tree — which takes a bottom-up
+pass to compute, since a parent's visibility depends on its descendants.
+
+"My requirements" is subtree-aware for the same reason, and that exposed something:
+in the seeded data `M. Koelewijn` owns only *branch* rows, so a leaf-only owner test
+filters the tree to nothing. The design's "34" was never derived from anything.
+
+```
+$ node scripts/smoke-live.js
+PASS  cockpit gap header matches its own list  — header=17 rows=17
+PASS  violation column header matches its own list  — header=3 rows=3
+PASS  tree violations chip matches the cockpit gap column  — chip=3 column=3
+PASS  search reveals the match and its ancestors only  — 2 rows: MES MES-2
+PASS  accepting evidence removes the item from the queue  — 8 -> 7
+PASS  the accepted requirement is verified in the tree  — PLM-1-2 status="verified"
+```
+
+Every check compares a *rendered number* against a *rendered list length*, never
+against a constant — a constant would pass just as happily against the literals it
+replaced. Two earlier versions of these assertions passed while the search was
+completely inert ([FINDINGS.md](FINDINGS.md) #30).
+
 ### What is still read-only
 
-The other five views reproduce the design's **look and its read/navigate
-behaviour** only. There are no edit pages for guardrails, ADRs, agent sessions,
-validation-queue items, risks or releases — those entities are seeded and
-displayed. Security is off, so there is no login or user role either.
+The other views reproduce the design's **look and its read/navigate behaviour**
+only. There are no edit pages for guardrails, ADRs, agent sessions, risks or
+releases — those entities are seeded and displayed, and a requirement's guardrail
+mappings cannot be attached or detached from the editor. Security is off, so there
+is no login or user role, which is why the owner filter is pinned to a name
+(`AppState.CurrentUserName`, one edit when real authentication lands).
 
 ## Known gaps
 

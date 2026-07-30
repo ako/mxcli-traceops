@@ -165,3 +165,18 @@ begin
   return $Lines;
 end;
 /
+
+/**
+ * The baseline the app is reporting against.
+ *
+ * The status bar's totals belong to the baseline, not to the modelled tree, so
+ * they are read from here — see 21-live-domain.mdl for why the two scales are
+ * kept apart.
+ */
+create or replace microflow TraceOps.DS_CurrentBaseline ()
+returns TraceOps.Baseline as $Baseline
+begin
+  retrieve $Baseline from TraceOps.Baseline where [IsCurrent = true] limit 1;
+  return $Baseline;
+end;
+/

@@ -37,7 +37,8 @@ create or replace page TraceOps.ValidationQueue (
               dynamictext qHint (Content: 'oldest first', Class: 'tr-panel-hint')
             }
             listview lvQueue (
-              DataSource: database from TraceOps.ValidationItem sort by SortIndex asc,
+              DataSource: database from TraceOps.ValidationItem
+                where [Decision = TraceOps.ValidationDecision.pending] sort by SortIndex asc,
               Class: 'tr-panel-body tr-fill tr-lv'
             ) {
               container qRow (
@@ -78,10 +79,16 @@ create or replace page TraceOps.ValidationQueue (
                 dynamictext vDesc (Content: '{1}', ContentParams: [{1} = Description], Class: 'tr-detail-desc tr-block')
               }
               container vActions (Class: 'tr-actions') {
-                container approveBtn (OnClick: microflow TraceOps.ACT_GoTrace, Class: 'tr-btn-approve') {
+                container approveBtn (
+                  OnClick: microflow TraceOps.ACT_AcceptEvidence(Item: $currentObject),
+                  Class: 'tr-btn-approve'
+                ) {
                   dynamictext approveTxt (Content: '✓ Accept evidence')
                 }
-                container rejectBtn (OnClick: microflow TraceOps.ACT_GoSessions, Class: 'tr-btn-reject') {
+                container rejectBtn (
+                  OnClick: microflow TraceOps.ACT_SendBackToAgent(Item: $currentObject),
+                  Class: 'tr-btn-reject'
+                ) {
                   dynamictext rejectTxt (Content: '✗ Send back to agent')
                 }
               }

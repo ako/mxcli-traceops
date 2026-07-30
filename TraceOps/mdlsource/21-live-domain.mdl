@@ -1,0 +1,95 @@
+/**
+ * TraceOps — schema for live counters, validation decisions and tree search.
+ *
+ * Three gaps closed here, all of the same shape: a number or a control that the
+ * design drew as a static value, and which has to become real now that the data
+ * underneath it can change.
+ *
+ *   1. Every header counter was a literal in the page source, so the "17" over
+ *      the No-implementation column stayed 17 while the list beneath it grew.
+ *   2. The validation queue's Accept / Send-back buttons navigated instead of
+ *      deciding, and ValidationItem had nowhere to record an outcome.
+ *   3. The tree's filter box was a styled container with no input widget.
+ *
+ * As with 17-crud-domain.mdl, `alter entity … add attribute` has no
+ * `or replace` form, so this file applies once (FINDINGS #21).
+ */
+
+-- MARK: Validation decisions
+
+/**
+ * The outcome of a human review of an agent's evidence.
+ *
+ * `pending` is the default so every seeded item starts in the queue.
+ */
+create enumeration TraceOps.ValidationDecision (
+  pending 'awaiting review',
+  accepted 'evidence accepted',
+  sentback 'sent back to agent'
+);
+
+alter entity TraceOps.ValidationItem
+  add attribute Decision: enumeration(TraceOps.ValidationDecision) not null default pending
+  -- DecisionLabel is pre-rendered: an enum bound to a DYNAMICTEXT renders its
+  -- value name rather than its caption (FINDINGS #19).
+  add attribute DecisionLabel: string(40)
+  add attribute DecidedBy: string(60);
+
+-- MARK: Tree search
+
+-- MatchesSearch is true when this row, or anything below it, matches the active
+-- search. Self-matches are set first, then OR'd up the tree, so a matching leaf
+-- keeps its whole ancestor chain on screen instead of appearing without context.
+-- MatchesOwner is the same idea for the "My requirements" chip. It has to
+-- propagate too: in the seeded data M. Koelewijn owns only branch rows, so a
+-- leaf-only owner test hides every one of them and the chip filters the tree to
+-- nothing. The design's "34" was never derived from anything.
+alter entity TraceOps.Requirement
+  add attribute MatchesSearch: boolean not null default true
+  add attribute MatchesOwner: boolean not null default true;
+
+-- MARK: Live counters
+
+alter entity TraceOps.AppState
+  -- CurrentUserName is who "My requirements" means. Security is off, so there is
+  -- no current user to compare against and the owner filter has to be pinned to a
+  -- name. Keeping it here rather than inline in ACT_ApplyTreeState makes it one
+  -- edit when real authentication lands.
+  add attribute CurrentUserName: string(60) not null default 'M. Koelewijn'
+  add attribute SearchText: string(100)
+  -- The counters below are recomputed by ACT_RecomputeCounters on every write.
+  -- They describe the modelled tree, so each one has to agree with the list it
+  -- sits above. The baseline-scale figures in the status bar and the tree footer
+  -- are a different thing and stay on Baseline.
+  add attribute ReqCount: integer not null default 0
+  add attribute GapNoImpl: integer not null default 0
+  add attribute GapNoTest: integer not null default 0
+  add attribute GapViolations: integer not null default 0
+  add attribute OpenGapCount: integer not null default 0
+  add attribute MineCount: integer not null default 0
+  add attribute GuardrailCount: integer not null default 0
+  add attribute ReleaseCount: integer not null default 0
+  add attribute RiskCount: integer not null default 0
+  add attribute LeafCount: integer not null default 0
+  add attribute MappedPercent: integer not null default 0
+  add attribute ImplementedPercent: integer not null default 0
+  add attribute VerifiedPct: integer not null default 0;
+
+-- MARK: Baseline totals
+
+/**
+ * The baseline's own headline figures.
+ *
+ * The design shows two different scales at once, and conflating them would be
+ * wrong in both directions. "1 248 requirements in baseline", 2 104 artifacts and
+ * 2 026 tests describe the whole 4.2 baseline; the tree models 81 of those
+ * requirements in detail. So the baseline-scoped strip keeps the baseline's
+ * numbers — now as data on the entity that owns them rather than as literals in
+ * the page — and everything that labels the *modelled* tree becomes live.
+ */
+alter entity TraceOps.Baseline
+  add attribute ReqTotal: integer not null default 0
+  add attribute ArtifactTotal: integer not null default 0
+  add attribute TestTotal: integer not null default 0
+  add attribute VerifiedPercent: integer not null default 0
+  add attribute BuiltPercent: integer not null default 0;

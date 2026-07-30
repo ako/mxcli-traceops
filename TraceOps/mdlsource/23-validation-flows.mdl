@@ -1,0 +1,165 @@
+/**
+ * TraceOps — the human sign-off gate.
+ *
+ * The validation queue's two buttons were wired to navigation microflows:
+ * "✓ Accept evidence" opened the traceability tree and "✗ Send back to agent"
+ * opened the sessions view. They looked like decisions and were not, and
+ * ValidationItem had nowhere to record an outcome anyway.
+ *
+ * Accepting evidence is the one action in the app that closes the whole loop the
+ * design is about — intent → requirement → guardrail → artifact → test → *human* —
+ * so it does the substantive thing as well as recording the decision: the
+ * requirement it refers to becomes verified, which moves its ancestors' coverage
+ * bars, the assurance percentages and the cockpit's gap columns.
+ */
+
+-- MARK: Shared
+
+/**
+ * Selects the first still-pending queue item, so the detail pane never sits on an
+ * item that has just left the queue.
+ */
+create or replace microflow TraceOps.ACT_SelectNextPendingValidation ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  $State = call microflow TraceOps.DS_AppState ();
+
+  retrieve $Next from TraceOps.ValidationItem
+    where [Decision = TraceOps.ValidationDecision.pending]
+    sort by SortIndex asc limit 1;
+
+  if $Next = empty then
+    change $State (SelectedValidationRef = '');
+  else
+    change $State (SelectedValidationRef = $Next/RequirementRef);
+  end if;
+  commit $State refresh;
+
+  return $Done;
+end;
+/
+
+/**
+ * Applies a decision to one queue item and re-derives everything downstream.
+ *
+ * Kept as one flow with a flag rather than duplicated per button, so the two
+ * paths cannot drift apart. $Accepted picks both the recorded decision and the
+ * status the referenced requirement takes on.
+ */
+create or replace microflow TraceOps.ACT_DecideValidation (
+  $Item: TraceOps.ValidationItem,
+  $Accepted: Boolean
+)
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  $State = call microflow TraceOps.DS_AppState ();
+
+  if $Accepted then
+    change $Item (
+      Decision = TraceOps.ValidationDecision.accepted,
+      DecisionLabel = 'evidence accepted',
+      DecidedBy = $State/CurrentUserName
+    );
+  else
+    change $Item (
+      Decision = TraceOps.ValidationDecision.sentback,
+      DecisionLabel = 'sent back to agent',
+      DecidedBy = $State/CurrentUserName
+    );
+  end if;
+  -- `refresh` is required, not cosmetic: without it the decision persists but the
+  -- queue ListView never re-queries, so a decided item stays on screen while the
+  -- sidebar badge beside it drops (FINDINGS #20 again).
+  commit $Item refresh;
+
+  -- Carry the decision through to the requirement itself. Every seeded item
+  -- references a real ReqId, but a queue item for a since-deleted requirement is
+  -- possible, so the retrieve is guarded.
+  retrieve $Requirement from TraceOps.Requirement
+    where [ReqId = $Item/RequirementRef] limit 1;
+  if $Requirement != empty then
+    if $Accepted then
+      change $Requirement (Status = TraceOps.ReqStatus.verified);
+    else
+      change $Requirement (Status = TraceOps.ReqStatus.dev);
+    end if;
+    commit $Requirement;
+
+    -- Status feeds the rollups, the coverage buckets and the assurance
+    -- percentages, so the whole tree is re-derived rather than patched.
+    $Recomputed = call microflow TraceOps.ACT_RecomputeTree ();
+  else
+    $Counted = call microflow TraceOps.ACT_RecomputeCounters ();
+  end if;
+
+  -- Move the queue on to whatever is still awaiting review.
+  $Advanced = call microflow TraceOps.ACT_SelectNextPendingValidation ();
+
+  return $Done;
+end;
+/
+
+
+-- MARK: Button actions
+
+/**
+ * Accepts the agent's evidence: the item leaves the queue and the requirement
+ * becomes verified.
+ */
+create or replace microflow TraceOps.ACT_AcceptEvidence ($Item: TraceOps.ValidationItem)
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+  $Decided = call microflow TraceOps.ACT_DecideValidation (Item = $Item, Accepted = true);
+  return $Done;
+end;
+/
+
+/**
+ * Rejects the evidence: the item leaves the queue and the requirement goes back
+ * into an agent session.
+ */
+create or replace microflow TraceOps.ACT_SendBackToAgent ($Item: TraceOps.ValidationItem)
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+  $Decided = call microflow TraceOps.ACT_DecideValidation (Item = $Item, Accepted = false);
+  return $Done;
+end;
+/
+
+-- MARK: Backfill
+
+/**
+ * Labels pre-existing queue items.
+ *
+ * Decision defaults to `pending` for rows created before this file existed, but
+ * DecisionLabel would be blank, so the queue chip would render nothing.
+ */
+create or replace microflow TraceOps.ACT_LabelValidationItems ()
+returns Boolean as $Done
+begin
+  declare $Done Boolean = true;
+
+  retrieve $Items from TraceOps.ValidationItem;
+  loop $Item in $Items
+  begin
+    if $Item/Decision = TraceOps.ValidationDecision.pending then
+      change $Item (DecisionLabel = 'awaiting review');
+    end if;
+    if $Item/Decision = TraceOps.ValidationDecision.accepted then
+      change $Item (DecisionLabel = 'evidence accepted');
+    end if;
+    if $Item/Decision = TraceOps.ValidationDecision.sentback then
+      change $Item (DecisionLabel = 'sent back to agent');
+    end if;
+  end loop;
+  commit $Items refresh;
+
+  return $Done;
+end;
+/
