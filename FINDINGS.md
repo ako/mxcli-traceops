@@ -13,7 +13,8 @@ Last run: a local build of **mxcli PR #58** (`nightly-72-gc55e2029`, 2026-07-30)
 **7 fixed** (#9, #10, #11, #12, #17, #23, #27) and **1 improved** (#16). The two
 that remained, #21 and #28, turned out **not to be defects**: both have documented
 correct forms that work today, and #21's was my error rather than a tool
-limitation. So nothing on this list is an open mxcli bug.
+limitation. So nothing on this list was an open mxcli bug at that point — see #36
+for one found since.
 
 Progress across three runs of the same harness: `nightly-68` 0 fixed →
 `nightly-71` 5 → `nightly-72` 7 fixed + 1 improved + 2 reclassified.
@@ -25,6 +26,12 @@ several correct earlier mistakes of mine rather than reporting tool defects.
 measured pushdown behaviour, and using one view object to edit several records.
 #35 records the catalog and lint gaps that stop the common data-retrieval
 anti-patterns from being detected automatically.
+
+**#36 is an open mxcli defect** — the first since the PR #58 run. `mxcli oql`, the
+tool the `verify-with-oql` skill is built around, cannot reach an app started with
+`mxcli run --local`, because the local boot path omits the two JVM properties that
+mount the runtime's dev servlets. A two-line patch is included and was built and
+verified.
 
 ---
 
@@ -1571,3 +1578,142 @@ attribute types; and skip any flow that also writes, which the activity list sho
 **Takeaway:** the blocker is not analysis capability — the model has everything.
 It is that two small projections drop fields the detectors need, and the tier with
 full access (Go) is the one custom rules cannot reach.
+
+---
+
+## 36. `mxcli oql` cannot reach a `mxcli run --local` app — the runtime is booted without the live-preview dev flags
+
+**Severity:** the documented verification tool is unusable from the documented dev loop
+**Phase:** 8 (large-app analysis)
+**Status:** open on `nightly-93-gb344f999`; a two-line patch fixes it (below)
+
+`mxcli oql` is how the toolchain says to verify data — there is a whole
+`verify-with-oql` skill for it. `mxcli run --local` is how the same toolchain says
+to run the app during development. The two do not meet: against a `--local` app,
+every OQL query fails.
+
+Reproduced end to end this session. Two hurdles, in order.
+
+**Hurdle 1 — the admin password is undiscoverable.**
+
+```
+$ mxcli oql -p TraceOps.mpr "SELECT r.ReqId FROM TraceOps.Requirement AS r LIMIT 1"
+Error: admin password required: set --token, M2EE_ADMIN_PASS env var, or configure .docker/.env
+```
+
+`resolveM2EEDefaults` resolves the token from `--token` > `M2EE_ADMIN_PASS` >
+`.docker/.env` (`cmd/mxcli/docker/m2ee.go:334`). A local run has no `.docker/`, and
+`mxcli run --local` never prints or writes the password it used. It is a constant
+in the source:
+
+```go
+// cmd/mxcli/docker/runlocal.go:131
+const defaultLocalAdminPass = "mxcli-local-dev"
+```
+
+so `export M2EE_ADMIN_PASS='mxcli-local-dev'` gets past this — but only if you read
+mxcli's source to find it.
+
+**Hurdle 2 — the endpoint is not mounted.** With the password set:
+
+```
+$ export M2EE_ADMIN_PASS='mxcli-local-dev'
+$ mxcli oql -p TraceOps.mpr "SELECT r.ReqId FROM TraceOps.Requirement AS r LIMIT 3"
+Error: OQL error: Action not found. -- the running app does not expose the OQL preview
+endpoint. If your .docker/ predates this fix, regenerate it with `mxcli docker init
+--force`, then `mxcli docker build && mxcli docker up` (this starts the runtime with
+the live-preview dev flags)
+```
+
+The error is accurate about the cause and useless about the cure: it only tells
+docker users what to do. There is no `--local` equivalent, and `mxcli run --help`
+lists no flag that would enable it.
+
+**Root cause.** The Mendix runtime mounts `/dev/preview_execute_oql` only when two
+JVM system properties are set. Docker mode passes them:
+
+```yaml
+# cmd/mxcli/docker/templates/docker-compose.yml:16
+command: ["./bin/start", "-J", "-Dmendix.live-preview=enabled",
+                        "-J", "-Dmendix.running.locally.by.studiopro=true"]
+```
+
+The local boot path does not:
+
+```go
+// cmd/mxcli/docker/localboot.go:380 — spawnAndConfigure
+cmd := exec.Command(javaExe, "-jar", rt.opts.launcherJar(), rt.opts.DeployDir)
+```
+
+**Proof, both directions.** The flags can be smuggled in through
+`JAVA_TOOL_OPTIONS`, which the JVM honours and mxcli passes through (it only
+rewrites that variable under `--trace`). Same app, same database, same query — the
+only difference is the two properties:
+
+```
+$ export JAVA_TOOL_OPTIONS='-Dmendix.live-preview=enabled -Dmendix.running.locally.by.studiopro=true'
+$ mxcli run --local -p TraceOps.mpr --db-name traceops_oqltest &
+$ export M2EE_ADMIN_PASS='mxcli-local-dev'
+$ mxcli oql -p TraceOps.mpr "SELECT r.ReqId, r.Title FROM TraceOps.Requirement AS r LIMIT 5"
+| Title                                          | ReqId   |
+|------------------------------------------------|---------|
+| OEE definition configurable per plant          | ANA-2-2 |
+| Non-conformance workflow                       | QMS-3   |
+...
+(5 rows)
+
+$ # restart with the ambient JAVA_TOOL_OPTIONS, nothing else changed:
+$ mxcli oql -p TraceOps.mpr "SELECT r.ReqId FROM TraceOps.Requirement AS r LIMIT 3"
+Error: OQL error: Action not found. -- ...
+```
+
+View entities work too, which is the point — this is exactly the verification
+#31–#34 needed:
+
+```
+$ mxcli oql -p TraceOps.mpr \
+    "SELECT v.ReqId, v.LinkCount FROM TraceOps.VW_Inline AS v WHERE v.LinkCount > 0 ORDER BY v.LinkCount DESC LIMIT 6"
+| LinkCount | ReqId         | ID                |
+|-----------|---------------|-------------------|
+| 2         | REQ-MES-1-1-2 | 14355223812243457 |
+...
+(6 rows)
+```
+
+**Fix, verified.** Two lines in `spawnAndConfigure`:
+
+```diff
+--- a/cmd/mxcli/docker/localboot.go
++++ b/cmd/mxcli/docker/localboot.go
+@@ func (rt *LocalRuntime) spawnAndConfigure() error {
+ 	javaExe := filepath.Join(rt.opts.JavaHome, "bin", "java")
+-	cmd := exec.Command(javaExe, "-jar", rt.opts.launcherJar(), rt.opts.DeployDir)
++	cmd := exec.Command(javaExe,
++		"-Dmendix.live-preview=enabled",
++		"-Dmendix.running.locally.by.studiopro=true",
++		"-jar", rt.opts.launcherJar(), rt.opts.DeployDir)
+```
+
+Built and run: `go build -o mxcli-patched ./cmd/mxcli`, then
+`mxcli-patched run --local -p TraceOps.mpr`. The app serves normally (HTTP 200) and
+the *stock* `mxcli oql` binary queries it, including view entities, with no
+`--direct` and no `JAVA_TOOL_OPTIONS`. The JVM command line confirms the properties
+are attached. `run --local` is a development loop that already forces `DTAPMode=D`,
+so always-on matches what docker mode does; an opt-out flag would only be needed if
+someone wants `--local` to model a production boot.
+
+**Two smaller things worth fixing alongside:**
+
+- `mxcli run --local` should print or write the admin password (or `mxcli oql`
+  should default to `defaultLocalAdminPass` when the target is a local run). Right
+  now the only way to find it is to read `runlocal.go`.
+- The "Action not found" hint should branch: the docker instructions are wrong
+  advice for a `--local` user, and a stale `.docker/docker-compose.yml` in the
+  project directory additionally makes `mxcli oql` route through
+  `docker compose exec` unless `--direct` is passed
+  (`cmd/mxcli/docker/m2ee.go:227`), even when the app is running locally.
+
+**What this cost.** In the #31–#34 work I fell back to building a page over the
+view entity, scraping it with Playwright, and turning on Postgres `log_statement`
+to capture the generated SQL. Every row-level assertion there is one `mxcli oql`
+command with the flags in place.

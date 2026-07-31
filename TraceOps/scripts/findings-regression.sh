@@ -286,6 +286,23 @@ else
   report PRESENT 23 "  └ an incomplete association combobox still slips through to MxBuild"
 fi
 
+# ---------------------------------------------------------------------------
+# Source probe — #36 needs a booted runtime and a database to test for real, which
+# is out of scope for a build-only harness. The defect is one missing pair of JVM
+# properties on the local boot path, so when the mxcli source is present the
+# presence of that fix is checkable directly.
+# ---------------------------------------------------------------------------
+LOCALBOOT=/opt/mxcli-src/cmd/mxcli/docker/localboot.go
+if [ -r "$LOCALBOOT" ]; then
+  if grep -q 'mendix.live-preview=enabled' "$LOCALBOOT"; then
+    report FIXED 36 "'run --local' boots the runtime with the live-preview dev flags, so mxcli oql can reach it"
+  else
+    report PRESENT 36 "'run --local' omits -Dmendix.live-preview; mxcli oql returns 'Action not found'"
+  fi
+else
+  printf '  (skipped #36: %s not readable — needs the mxcli source)\n' "$LOCALBOOT"
+fi
+
 # One build check covers every project probe at once.
 printf '\n  running mx check on the probe project…\n'
 mxout=$("$MX" check "$PROJ/TraceOps.mpr" 2>&1 | tail -25)
