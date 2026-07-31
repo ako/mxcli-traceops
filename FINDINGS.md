@@ -18,6 +18,14 @@ limitation. So nothing on this list is an open mxcli bug.
 Progress across three runs of the same harness: `nightly-68` 0 fixed →
 `nightly-71` 5 → `nightly-72` 7 fixed + 1 improved + 2 reclassified.
 
+**#31–#35 are a different kind of entry.** They come from working out how to
+analyse and extend a *large existing* app rather than from building this one, and
+several correct earlier mistakes of mine rather than reporting tool defects.
+#31–#34 are about view entities — what they are, what OQL can express, the
+measured pushdown behaviour, and using one view object to edit several records.
+#35 records the catalog and lint gaps that stop the common data-retrieval
+anti-patterns from being detected automatically.
+
 ---
 
 ## 1. `go build` alone cannot build mxcli — the ANTLR parser is not committed
@@ -1256,3 +1264,310 @@ past row 20 and simply not in the DOM. The data was right the whole time.
 *non-empty*, will be satisfied by a platform quirk sooner or later. Assert the
 exact expected set. And when a test and a feature disagree, the test is a suspect
 too — here it was the culprit twice and the victim once.
+
+---
+
+## 31. What a view entity actually is — and the "read-only" mistake
+
+**Severity:** high — I gave wrong architectural advice from this misunderstanding
+**Phase:** 5 (large-app analysis)
+
+I described view entities as "read-only", which is wrong in the way that matters
+and led me to rule them out for editable screens. The accurate model:
+
+| | View entity |
+| --- | --- |
+| Storage | **None.** Not a table, and *not* a database view either |
+| Rows | Materialised per query by the runtime, from OQL |
+| In memory | Behave like a **non-persistent** object — attributes can be changed |
+| Persisting | `commit` does not write back; you write through the source entity |
+
+The "not a database view" part is easy to assume wrong. After deploying an app
+with two view entities, Postgres has no view objects at all:
+
+```
+$ psql -d traceops_vwtest -c "\dv"
+Did not find any relations.
+```
+
+The runtime translates the OQL and issues it per query instead. That has a
+practical consequence: **you cannot verify a view entity by inspecting the
+schema.** It has to be exercised at runtime, which is how #33 was checked.
+
+**The correction that matters:** a view row is editable in memory. This builds
+with 0 errors:
+
+```
+create or replace microflow TraceOps.ZZ_ViewWriteBack ($Row: TraceOps.VW_ReqSummary)
+begin
+  change $Row (OwnerName = 'M. Koelewijn');        -- in-memory, like a non-persistent
+  retrieve $Real from TraceOps.Requirement where [ReqId = $Row/ReqId] limit 1;
+  change $Real (OwnerName = $Row/OwnerName);
+  commit $Real;                                     -- write through the source entity
+end;
+```
+
+So a view entity is a legitimate backing for an *editable* screen, not only a
+read-only report. See #34 for what that enables.
+
+**Gotcha when generating one:** the declared attribute type must match the source
+column exactly. `OwnerName: String(60)` against a `String(100)` source gave:
+
+```
+[error] [CE6770] "View Entity is out of sync with the OQL Query." at Entity 'TraceOps.VW_ReqSummary'
+```
+
+Widening to `String(100)` cleared it. Useful corollary: mxbuild genuinely
+type-checks the OQL, so a clean build is real evidence, not just a syntax pass.
+
+**Takeaway:** "read-only" conflated three separate things — no storage, no
+write-back on commit, and immutability. Only the first two are true.
+
+---
+
+## 32. Mendix OQL has no CTEs, but inline views make that a non-limitation
+
+**Severity:** medium — I overstated a limitation and narrowed good advice
+**Phase:** 5 (large-app analysis)
+
+I recorded "no recursive CTEs and no window functions" and then let it imply that
+multi-step queries were out of reach, so a view entity could not replace anything
+complicated. That inference was wrong: **a non-recursive CTE is only syntactic
+sugar for an inline view (a derived table in `FROM`), and Mendix OQL supports
+inline views.**
+
+Verified — this parses, applies and builds at **0 errors**, aggregate and outer
+join included:
+
+```sql
+create or modify view entity TraceOps.VW_Inline (ReqId: string(60), LinkCount: integer) as (
+  select t.ReqId as ReqId, t.LinkCount as LinkCount
+  from (
+    select r.ReqId as ReqId, count(gl.ID) as LinkCount
+    from TraceOps.Requirement as r
+    left outer join TraceOps.GuardrailLink_Requirement/TraceOps.GuardrailLink as gl
+    group by r.ReqId
+  ) as t
+);
+```
+
+What is genuinely missing, re-checked on `nightly-93-gb344f999`:
+
+| Construct | Result |
+| --- | --- |
+| Inline view / derived table | **works** |
+| `WITH` (non-recursive) | not in the grammar — **but equivalent to the above, so nothing is lost** |
+| `WITH RECURSIVE` | `mismatched input 'with'` — a real gap; recursion is not sugar |
+| `row_number() over (…)` | `extraneous input 'over'` — a real gap |
+
+So the exclusion list for "could this be a view entity?" is small: genuine
+unbounded recursion, and ranking/windowing. Everything else — aggregate-then-join,
+filter-then-join, multi-step shaping — is expressible today. Even recursion is
+expressible at a *bounded* depth by unrolling into N self-joins, verbosely.
+
+**Takeaway:** check whether a missing feature is sugar before treating it as a
+capability gap. I let one grammar rejection rule out an entire class of designs.
+
+---
+
+## 33. Pushdown is the real argument for view entities — measured, not assumed
+
+**Severity:** high — this is the whole performance case, and it is verifiable
+**Phase:** 5 (large-app analysis)
+
+The reason a datasource microflow hurts at scale is that filtering, sorting and
+paging happen *after* the data reaches the runtime: the microflow returns the
+whole set, the widget shows 20 rows, and the rest becomes browser state. A view
+entity is queried like a table, so the database does that work.
+
+That is a claim worth measuring rather than repeating. With Postgres statement
+logging on, rendering a ListView over `VW_Inline` constrained to `LinkCount > 0`,
+sorted by `ReqId`, produced exactly **one** statement:
+
+```sql
+SELECT "VW_Inline"."ReqId", "VW_Inline"."LinkCount"
+FROM ( SELECT "t"."ReqId", "t"."LinkCount" FROM (
+         SELECT "r"."reqid" AS "ReqId", COUNT("gl"."id") AS "LinkCount"
+         FROM "traceops$requirement" "r"
+         LEFT OUTER JOIN "traceops$guardraillink" "gl"
+           ON "gl"."traceops$guardraillink_requirement" = "r"."id"
+         GROUP BY "r"."reqid" ) "t" ) "VW_Inline"
+WHERE "VW_Inline"."LinkCount" > $1
+ORDER BY "VW_Inline"."ReqId" ASC
+LIMIT $2
+```
+
+Three things this proves:
+
+1. The inline view survives into SQL as a nested derived table — the aggregate is
+   computed **in the database**.
+2. `WHERE` on `LinkCount` is pushed down **even though that column exists on no
+   table**. Constraining on a computed/aggregated column is exactly what a
+   datasource microflow cannot do.
+3. `ORDER BY` and `LIMIT` are pushed down, so unshown rows never leave the
+   database — the browser-state problem solved at source.
+
+Correctness was checked too, not just shape: every rendered row was diffed against
+the equivalent SQL aggregate.
+
+```
+view rows=68  sql rows=68
+view sum=91   sql sum=91
+EXACT MATCH — every row and count identical
+```
+
+This also fixes the "grid with associated columns" pattern: one query replaces one
+query per associated entity per page of rows.
+
+**Method note:** because a view entity is not a database object (#31), none of
+this is visible in the schema. Statement logging (`ALTER SYSTEM SET
+log_statement='all'` + `pg_reload_conf()`, reset afterwards) is the way to see
+what the runtime really issued. Worth keeping in the toolkit for any "is this
+query doing what I think?" question.
+
+---
+
+## 34. One view-entity object can front an edit form over several records
+
+**Severity:** medium — a design option I had ruled out
+**Phase:** 5 (large-app analysis)
+
+Following from #31: because a view row is editable in memory and written back
+explicitly, a *single* view object can represent a join across several persistent
+records, and one form can edit all of them.
+
+Verified at build level — a view whose row spans a requirement and its parent:
+
+```sql
+create or modify view entity TraceOps.VW_ReqPair (
+  ChildReqId: string(60),  ChildOwner: string(100),
+  ParentReqId: string(60), ParentOwner: string(100)
+) as (
+  select c.ReqId as ChildReqId, c.OwnerName as ChildOwner,
+         p.ReqId as ParentReqId, p.OwnerName as ParentOwner
+  from TraceOps.Requirement as c
+  inner join TraceOps.Requirement_Parent/TraceOps.Requirement as p
+);
+```
+
+with one save flow writing back to both records — `mx check`: **0 errors**:
+
+```
+retrieve $Child  ... where [ReqId = $Pair/ChildReqId]  limit 1; change; commit;
+retrieve $Parent ... where [ReqId = $Pair/ParentReqId] limit 1; change; commit;
+```
+
+Why this is worth knowing: the usual alternative is a non-persistent "form" entity
+plus a microflow that populates it from several sources and another that fans the
+values back out. The view entity replaces the populate step with one database
+query that already does the join — less code, and the read is pushed down (#33).
+
+**Constraints to respect:**
+
+- The write-back flow is the *only* thing that persists. `commit` on the view row
+  does nothing, so a form that forgets the save flow silently discards edits —
+  the failure is quiet, which makes it worth a test rather than a review.
+- Validation belongs in the write-back flow, not on the view entity.
+- Concurrency is on you: the row was read at query time and written later, with no
+  optimistic locking. For contended records, re-read and compare before writing.
+
+**Not yet verified:** I checked this to `mx check`, not through a rendered form
+with a real user edit. The in-memory editability behind it *is* runtime-verified
+(#31), but the multi-record form itself is a build-level result only.
+
+---
+
+## 35. Catalog and lint gaps that block detecting the real performance anti-patterns
+
+**Severity:** medium — the analysis is possible, the tooling just cannot express it
+**Phase:** 5 (large-app analysis)
+
+The two data-retrieval problems that dominate real Mendix performance work are:
+
+1. **A grid with columns over associations** — each association becomes a separate
+   query, so one table renders as many queries.
+2. **A microflow datasource** — filters, sorting and paging are not pushed to the
+   database, so more rows are returned than are displayed, and the surplus sits in
+   browser state.
+
+Both are model-visible in principle. Neither is fully detectable with today's
+catalog and lint API. What I found probing it:
+
+**Gap 1 — grid columns are absent from the catalog.** A datagrid with three
+columns, two of them over an association, produces exactly **one** widget row,
+with no columns and an empty `AttributeRef`:
+
+```
+| Name    | WidgetType                              | EntityRef              | AttributeRef |
+| dgLinks | com.mendix.widget.web.datagrid.Datagrid | TraceOps.GuardrailLink |              |
+```
+
+But the model reader sees them perfectly — `DESCRIBE PAGE` round-trips the
+association paths:
+
+```
+column "GuardrailLink_Requirement/ReqId"     (Attribute: GuardrailLink_Requirement/ReqId)
+column "GuardrailLink_Requirement/OwnerName" (Attribute: GuardrailLink_Requirement/OwnerName)
+```
+
+So this is a **catalog** gap, not a reader gap — the fix is to emit a row per grid
+column with its attribute path. Then anti-pattern 1 is a one-line query: count
+columns whose `AttributeRef` contains `/`, grouped by grid.
+
+**Gap 2 — `REFS` conflates a datasource with an action.** Every `datasource` ref
+targets an ENTITY (37 of them; none to a microflow). A page→microflow reference is
+always `RefKind = 'action'` (51), whether it is a DataView's datasource or a
+button's click handler. `CATALOG.WIDGETS` *does* record it correctly —
+`MicroflowRef` is populated for `Forms$ListView` and the pluggable Datagrid alike,
+and is distinguishable from `Forms$ActionButton` — so anti-pattern 2 **is**
+detectable in catalog SQL today.
+
+**Gap 3 — the Starlark projection drops what the rule needs.** The widget struct
+omits the one field that would disambiguate, though the catalog table has it:
+
+```go
+// mdl/linter/starlark.go — widgetToStarlark
+"widget_type", "container_qualified_name", "entity_ref", "attribute_ref"
+// no microflow_ref / nanoflow_ref
+```
+
+A prototype rule keyed on `refs_to(mf, "datasource")` therefore returned zero
+hits at *any* threshold. Bisecting confirmed the rest of the API is fine —
+`violation()`, `microflows()` (77) and `activities_for()` (1628 activities) all
+work; only the datasource link is missing.
+
+**Gap 4 — activities are flat.** The Starlark activity struct has no sequence,
+parent or depth, so a custom rule can say "this microflow contains a loop *and* a
+retrieve" but not "this retrieve is *inside* that loop". The built-in Go rule
+CONV011 gets it right because Go rules get the real AST via `ctx.FullMicroflow()`
+and recurse through `LoopedActivity.ObjectCollection`.
+
+**Where each rule can live today:**
+
+| Anti-pattern | Go built-in | Catalog SQL | Starlark |
+| --- | --- | --- | --- |
+| Association columns → query fan-out | yes | **no** (gap 1) | no |
+| Microflow datasource without pushdown | yes | **yes** | no (gap 3) |
+| Retrieve/commit nested in a loop | **yes** (CONV011 does commits) | no | no (gap 4) |
+| Unconstrained retrieve on a large entity | yes | yes | **yes** |
+
+**Suggested changes, smallest first:**
+
+1. Add `microflow_ref` / `nanoflow_ref` to `widgetToStarlark` — the data is already
+   in `CATALOG.WIDGETS`, and this alone unblocks anti-pattern 2 for custom rules.
+2. Emit grid columns into `CATALOG.WIDGETS` with their attribute paths — the
+   reader already parses them; this unblocks anti-pattern 1 for everyone.
+3. Add `sequence`/parent to the activity struct, or accept that nesting-aware rules
+   are Go-only.
+
+**On the suggestion side**, `violation()` already carries a `Suggestion` field
+(CONV011: "Move the commit outside the loop, or collect objects in a list and
+commit once after the loop"), so "here is the better approach" is first-class. And
+a view-entity suggestion can be *specific* rather than generic: the catalog knows
+the target entity and the XPath, so a rule can emit skeleton OQL — provided it
+respects the real limits (#32: no recursion, no windowing; #31: match the source
+attribute types; and skip any flow that also writes, which the activity list shows).
+
+**Takeaway:** the blocker is not analysis capability — the model has everything.
+It is that two small projections drop fields the detectors need, and the tier with
+full access (Go) is the one custom rules cannot reach.

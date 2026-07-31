@@ -312,6 +312,10 @@ is no login or user role, which is why the owner filter is pinned to a name
   ephemeral container, and why reproducibility has to come from committed files.
 - **[FINDINGS.md](FINDINGS.md)** — a running log of every mxcli bug, surprise and
   workaround hit while building this, numbered, with the exact command and output.
+  #31–#35 go wider than this app: what a Mendix view entity really is, what OQL can
+  express, the *measured* query-pushdown behaviour, editing several records through
+  one view object, and the catalog/lint gaps that stop the common data-retrieval
+  anti-patterns being detected automatically.
   Two of them are silent writer bugs that pass `mxcli check` and only fail at
   MxBuild, and three came out of making the tree editable — Mendix has no integer
   division, `combobox` cannot bind an association, and `not null` validates on
