@@ -43,7 +43,12 @@ report() {  # report <status> <id> <summary>
 syntax() { printf '%s\n' "$1" > "$WORK/probe.mdl"; "$MXCLI" check "$WORK/probe.mdl" 2>&1; }
 
 printf 'mxcli    %s\n' "$("$MXCLI" --version 2>&1 | head -1)"
-printf 'source   %s\n\n' "$(cat /opt/mxcli-src/.installed-sha 2>/dev/null || echo '?')"
+printf 'binary   %s\n' "$MXCLI"
+# .installed-sha describes the binary the toolchain hook installed on PATH. When
+# MXCLI points at a locally built binary (testing a branch) it is NOT that build's
+# sha, so it is labelled honestly rather than passed off as the version under test.
+printf 'src HEAD %s (of /opt/mxcli-src, not necessarily of $MXCLI)\n\n' \
+  "$(git -C /opt/mxcli-src rev-parse --short HEAD 2>/dev/null || echo '?')"
 
 # ---------------------------------------------------------------------------
 # Syntax-only probes
@@ -292,6 +297,17 @@ fi
 # properties on the local boot path, so when the mxcli source is present the
 # presence of that fix is checkable directly.
 # ---------------------------------------------------------------------------
+# #35 gap 3 — the Starlark widget projection must expose the datasource flow, or
+# a rule keyed on it cannot see a microflow-datasource list widget at all.
+STARLARK=/opt/mxcli-src/mdl/linter/starlark.go
+if [ -r "$STARLARK" ]; then
+  if grep -q 'microflow_ref' "$STARLARK"; then
+    report FIXED 35 "  └ gap 3: Starlark widgets expose microflow_ref, so PERF001 can detect a microflow datasource"
+  else
+    report PRESENT 35 "  └ gap 3: Starlark widgets still drop microflow_ref; PERF001 cannot fire"
+  fi
+fi
+
 LOCALBOOT=/opt/mxcli-src/cmd/mxcli/docker/localboot.go
 if [ -r "$LOCALBOOT" ]; then
   if grep -q 'mendix.live-preview=enabled' "$LOCALBOOT"; then

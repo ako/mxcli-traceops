@@ -9,15 +9,15 @@ FIXED / STILL PRESENT / CHANGED. Run it after any mxcli update. The remaining
 entries are Mendix semantics, Atlas CSS, environment or test methodology — mxcli
 cannot fix those, and the script says so rather than pretending to test them.
 
-Last run: a local build of **mxcli PR #58** (`nightly-72-gc55e2029`, 2026-07-30) —
-**7 fixed** (#9, #10, #11, #12, #17, #23, #27) and **1 improved** (#16). The two
-that remained, #21 and #28, turned out **not to be defects**: both have documented
-correct forms that work today, and #21's was my error rather than a tool
-limitation. So nothing on this list was an open mxcli bug at that point — see #36
-for one found since.
+Last run: a local build of branch **`claude/mxbuild-diagnostics-spike-emta6h`**
+(`e47926f8`, 2026-07-31) — **9 fixed, 0 still present, 1 improved, 3 by design, 0
+changed**, with `mx check` clean on the probe project. #36 is fixed there, and
+more thoroughly than the patch I proposed. Nothing on this list is an open mxcli
+defect.
 
-Progress across three runs of the same harness: `nightly-68` 0 fixed →
-`nightly-71` 5 → `nightly-72` 7 fixed + 1 improved + 2 reclassified.
+Progress across four runs of the same harness: `nightly-68` 0 fixed →
+`nightly-71` 5 → `nightly-72` 7 fixed + 1 improved + 2 reclassified →
+`e47926f8` 9 fixed.
 
 **#31–#35 are a different kind of entry.** They come from working out how to
 analyse and extend a *large existing* app rather than from building this one, and
@@ -27,11 +27,12 @@ measured pushdown behaviour, and using one view object to edit several records.
 #35 records the catalog and lint gaps that stop the common data-retrieval
 anti-patterns from being detected automatically.
 
-**#36 is an open mxcli defect** — the first since the PR #58 run. `mxcli oql`, the
-tool the `verify-with-oql` skill is built around, cannot reach an app started with
-`mxcli run --local`, because the local boot path omits the two JVM properties that
-mount the runtime's dev servlets. A two-line patch is included and was built and
-verified.
+**#36 was the one open defect** found after the PR #58 run — `mxcli oql` could not
+reach an app started with `mxcli run --local`. It is now fixed, and the fix also
+closed the admin-password and misleading-hint problems recorded alongside it.
+**#35's gap 3 is fixed too**: Starlark rules can now read a widget's datasource
+microflow, which makes `TraceOps/.claude/lint-rules/perf001_microflow_datasource.star`
+work — the rule that was inert when #35 was written. #35's other three gaps stand.
 
 ---
 
@@ -1488,6 +1489,30 @@ with a real user edit. The in-memory editability behind it *is* runtime-verified
 
 **Severity:** medium — the analysis is possible, the tooling just cannot express it
 **Phase:** 5 (large-app analysis)
+**Status:** gap 3 **fixed** on `claude/mxbuild-diagnostics-spike-emta6h` (`babc41a9`);
+gaps 1, 2 and 4 unchanged. Gap 2 was never a defect — see the table below.
+
+**Update — gap 3 is closed, and the rule it blocked now works.** `Widget` carries
+`MicroflowRef`/`NanoflowRef` through the projection and Starlark exposes
+`microflow_ref` / `nanoflow_ref`. `TraceOps/.claude/lint-rules/perf001_microflow_datasource.star`
+is the rule that returned zero hits at any threshold before; on the fixed build it
+finds all 10 microflow-datasource ListViews in this app:
+
+```
+$ mxcli lint -p TraceOps.mpr        # fixed build
+  ⚠ ListView 'lvTests' on TraceOps.ValidationQueue takes its data from microflow
+    'TraceOps.DS_ValTests' — no database pushdown, so search, sort and paging
+    happen in memory over the full result set. [PERF001]
+  … 10 findings
+
+$ mxcli lint -p TraceOps.mpr        # stock nightly-93, same rule, same project
+  ✗ Starlark rule error: "widget" struct has no .microflow_ref attribute [PERF001]
+```
+
+That the old build *errors* rather than silently reporting nothing is worth noting:
+it is the loud failure mode, not the quiet one. The rule guards on
+`getattr(w, "microflow_ref", None)` so it degrades to one explanatory finding on
+older builds instead of breaking every lint run.
 
 The two data-retrieval problems that dominate real Mendix performance work are:
 
@@ -1554,14 +1579,14 @@ and recurse through `LoopedActivity.ObjectCollection`.
 | Anti-pattern | Go built-in | Catalog SQL | Starlark |
 | --- | --- | --- | --- |
 | Association columns → query fan-out | yes | **no** (gap 1) | no |
-| Microflow datasource without pushdown | yes | **yes** | no (gap 3) |
+| Microflow datasource without pushdown | yes | **yes** | **yes** (gap 3 fixed) |
 | Retrieve/commit nested in a loop | **yes** (CONV011 does commits) | no | no (gap 4) |
 | Unconstrained retrieve on a large entity | yes | yes | **yes** |
 
 **Suggested changes, smallest first:**
 
-1. Add `microflow_ref` / `nanoflow_ref` to `widgetToStarlark` — the data is already
-   in `CATALOG.WIDGETS`, and this alone unblocks anti-pattern 2 for custom rules.
+1. ~~Add `microflow_ref` / `nanoflow_ref` to `widgetToStarlark`~~ — **done** in
+   `babc41a9`; anti-pattern 2 is now detectable from a custom rule (PERF001 above).
 2. Emit grid columns into `CATALOG.WIDGETS` with their attribute paths — the
    reader already parses them; this unblocks anti-pattern 1 for everyone.
 3. Add `sequence`/parent to the activity struct, or accept that nesting-aware rules
@@ -1585,7 +1610,9 @@ full access (Go) is the one custom rules cannot reach.
 
 **Severity:** the documented verification tool is unusable from the documented dev loop
 **Phase:** 8 (large-app analysis)
-**Status:** open on `nightly-93-gb344f999`; a two-line patch fixes it (below)
+**Status:** **FIXED** on `claude/mxbuild-diagnostics-spike-emta6h` (`48c7d9af`).
+All three parts — the boot flags, the password, and the misleading hint — were
+addressed. Re-test at the end of this entry.
 
 `mxcli oql` is how the toolchain says to verify data — there is a whole
 `verify-with-oql` skill for it. `mxcli run --local` is how the same toolchain says
@@ -1717,3 +1744,63 @@ someone wants `--local` to model a production boot.
 view entity, scraping it with Playwright, and turning on Postgres `log_statement`
 to capture the generated SQL. Every row-level assertion there is one `mxcli oql`
 command with the flags in place.
+
+### Re-test — fixed
+
+Built `claude/mxbuild-diagnostics-spike-emta6h` (`e47926f8`) and ran the whole
+scenario again with a clean environment: no `M2EE_ADMIN_PASS`, no
+`JAVA_TOOL_OPTIONS`, no `--direct`, no `--token`.
+
+The fix went further than the two lines I proposed — it covers all three points
+above:
+
+| Part | Change |
+| --- | --- |
+| Boot flags | `LocalRuntimeOptions.jvmArgs()` always passes both `-Dmendix.*` properties |
+| Password | `resolveM2EEDefaults` falls back to `defaultLocalAdminPass` (the admin API is loopback-only) |
+| Hint | The "Action not found" message now branches between `run --local` and docker |
+| Discoverability | The `run --local` banner prints a ready-to-copy `mxcli oql` line |
+
+```
+$ mxcli run --local -p TraceOps.mpr --ensure-db --db-name traceops_fix36
+...
+App is running at http://127.0.0.1:8080/
+Query data:  mxcli oql -p .../TraceOps.mpr "SELECT ..."
+
+$ mxcli oql -p TraceOps.mpr "SELECT r.ReqId, r.Title FROM TraceOps.Requirement AS r LIMIT 4"
+| Title                                    | ReqId   |
+|------------------------------------------|---------|
+| OPC UA client                            | EDG-1   |
+| Row-level plant scoping on every query   | PLT-3-1 |
+...
+(4 rows)
+```
+
+Both view-entity cases from #31–#34 now answer in one command each — the inline
+view with pushdown applied, and the multi-record pair view:
+
+```
+$ mxcli oql -p TraceOps.mpr "SELECT v.ReqId, v.LinkCount FROM TraceOps.VW_Inline AS v
+                             WHERE v.LinkCount > 0 ORDER BY v.LinkCount DESC LIMIT 3"
+(3 rows)
+$ mxcli oql -p TraceOps.mpr "SELECT v.ChildReqId, v.ParentReqId FROM TraceOps.VW_ReqPair AS v LIMIT 3"
+(3 rows)
+```
+
+**The two halves are independently useful.** Pointing the *stock* `nightly-93`
+`oql` client at a runtime booted by the fixed build works as soon as the password
+is supplied — so the boot-flag change alone unblocks anyone on an older client:
+
+```
+$ M2EE_ADMIN_PASS='mxcli-local-dev' mxcli oql -p TraceOps.mpr "SELECT r.ReqId FROM TraceOps.Requirement AS r LIMIT 2"
+(2 rows)
+$ mxcli oql -p TraceOps.mpr "SELECT r.ReqId FROM TraceOps.Requirement AS r LIMIT 1"   # no password
+Error: admin password required: set --token, M2EE_ADMIN_PASS env var, or configure .docker/.env
+```
+
+The token fallback is what makes it zero-config. `go test ./cmd/mxcli/docker/ -run
+'TestJVMArgs|TestResolveM2EEDefaults'` passes.
+
+**No regressions.** The full harness against this build: **9 fixed, 0 still
+present, 1 improved, 3 by design, 0 changed**, and `mx check` on the probe project
+reports 0 errors.
