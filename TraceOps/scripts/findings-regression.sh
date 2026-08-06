@@ -291,6 +291,39 @@ else
   report PRESENT 23 "  └ an incomplete association combobox still slips through to MxBuild"
 fi
 
+# #37 — a parameterized microflow datasource must survive describe -> exec.
+# Asserted on the describe output rather than by re-applying, so this probe cannot
+# leave a CE1571 behind and spoil the single mx check below. A String parameter is
+# deliberate: with an entity parameter matching the enclosing context, Mendix
+# supplies a default argument and the round-trip builds clean even when the
+# binding was dropped.
+cat > "$WORK/p37.mdl" <<'EOF'
+create or modify microflow TraceOps.ZZ_DS_Probe37 ($Prefix: String)
+returns List of TraceOps.GuardrailLink as $Links
+begin
+  retrieve $Links from TraceOps.GuardrailLink
+    where TraceOps.GuardrailLink.GuardrailRef = $Prefix;
+  return $Links;
+end;
+/
+
+create or replace page TraceOps.ZZ_Probe37 (Title: 'p', Layout: Atlas_Core.Atlas_Default)
+{
+  listview lvProbe37 (DataSource: microflow TraceOps.ZZ_DS_Probe37(Prefix: 'GR')) {
+    dynamictext t37 (Content: '{1}', ContentParams: [{1} = GuardrailTitle])
+  }
+}
+EOF
+"$MXCLI" exec "$WORK/p37.mdl" -p "$PROJ/TraceOps.mpr" >/dev/null 2>&1
+out=$("$MXCLI" -p "$PROJ/TraceOps.mpr" -c "DESCRIBE PAGE TraceOps.ZZ_Probe37" 2>&1)
+if grep -q "ZZ_DS_Probe37(Prefix" <<<"$out"; then
+  report FIXED 37 "describe page emits a parameterized datasource's arguments; the round-trip is lossless"
+elif grep -q 'ZZ_DS_Probe37' <<<"$out"; then
+  report PRESENT 37 "describe page still drops datasource arguments — a describe -> exec round-trip yields CE1571"
+else
+  report CHANGED 37 "describe page no longer shows the datasource at all — check by hand"
+fi
+
 # ---------------------------------------------------------------------------
 # Source probe — #36 needs a booted runtime and a database to test for real, which
 # is out of scope for a build-only harness. The defect is one missing pair of JVM

@@ -9,15 +9,14 @@ FIXED / STILL PRESENT / CHANGED. Run it after any mxcli update. The remaining
 entries are Mendix semantics, Atlas CSS, environment or test methodology — mxcli
 cannot fix those, and the script says so rather than pretending to test them.
 
-Last run: a local build of branch **`claude/mxbuild-diagnostics-spike-emta6h`**
-(`e47926f8`, 2026-07-31) — **9 fixed, 0 still present, 1 improved, 3 by design, 0
-changed**, with `mx check` clean on the probe project. #36 is fixed there, and
-more thoroughly than the patch I proposed. Nothing on this list is an open mxcli
-defect.
+Last run: **`nightly-247-g348b9dea`** (2026-08-06) — **10 fixed, 0 still present,
+1 improved, 3 by design, 0 changed**, with `mx check` clean on the probe project.
+All 24 `mdlsource/*.mdl` files still parse, and all three smoke suites pass against
+the running app. #37 is the one open defect on this list.
 
-Progress across four runs of the same harness: `nightly-68` 0 fixed →
+Progress across five runs of the same harness: `nightly-68` 0 fixed →
 `nightly-71` 5 → `nightly-72` 7 fixed + 1 improved + 2 reclassified →
-`e47926f8` 9 fixed.
+`e47926f8` 9 → `nightly-247` 10.
 
 **#31–#35 are a different kind of entry.** They come from working out how to
 analyse and extend a *large existing* app rather than from building this one, and
@@ -26,6 +25,13 @@ several correct earlier mistakes of mine rather than reporting tool defects.
 measured pushdown behaviour, and using one view object to edit several records.
 #35 records the catalog and lint gaps that stop the common data-retrieval
 anti-patterns from being detected automatically.
+
+**#37–#38 come from the `nightly-247` sweep.** #37 is an open defect: the fix that
+made a parameterized microflow datasource *build* did not extend to `describe
+page`, so a describe → exec round-trip silently drops the argument bindings and
+turns a clean build into CE1571. #38 evaluates the new `mxcli theme` feature
+against this app's hand-rolled theme — safe, but a no-op here, and the reason why
+is instructive.
 
 **#36 was the one open defect** found after the PR #58 run — `mxcli oql` could not
 reach an app started with `mxcli run --local`. It is now fixed, and the fix also
@@ -1804,3 +1810,129 @@ The token fallback is what makes it zero-config. `go test ./cmd/mxcli/docker/ -r
 **No regressions.** The full harness against this build: **9 fixed, 0 still
 present, 1 improved, 3 by design, 0 changed**, and `mx check` on the probe project
 reports 0 errors.
+
+---
+
+## 37. `describe page` drops a parameterized microflow datasource's arguments — the round-trip breaks the build
+
+**Severity:** medium — silent, and it turns a working page into a build error
+**Phase:** 9 (nightly-247 re-test)
+**Status:** open on `nightly-247-g348b9dea`; declared a known gap in the fix for
+upstream #835
+
+The write path landed and works. `c052b6d6` gave `MicroflowSource` a
+`ParameterMappings` field, so a widget datasource can now bind arguments:
+
+```sql
+listview lvByPrefix (DataSource: microflow TraceOps.DS_LinksByPrefix(Prefix: 'GR')) {
+  dynamictext t2 (Content: '{1}', ContentParams: [{1} = GuardrailTitle])
+}
+```
+
+`mx check` → **0 errors**. Before the fix this was CE1571 at build time while
+`check` and `exec` both reported success.
+
+**The read path did not.** `describe page` emits the microflow but not the
+arguments:
+
+```
+$ mxcli -p TraceOps.mpr -c "DESCRIBE PAGE TraceOps.ZZ_ParamDS2"
+  listview lvByPrefix (DataSource: microflow TraceOps.DS_LinksByPrefix) {
+                                                                   ^ no (Prefix: 'GR')
+```
+
+So describe → exec is lossy in the direction that breaks:
+
+```
+$ mxcli -p TraceOps.mpr -c "DESCRIBE PAGE TraceOps.ZZ_ParamDS2" > rt.mdl
+$ mxcli exec rt.mdl -p TraceOps.mpr
+$ mx check TraceOps.mpr
+[error] [CE1571] "No argument has been selected for parameter 'Prefix' and no default
+is available. Please select an argument manually." at List view 'lvByPrefix'
+The app contains: 1 errors.
+```
+
+**Choose the test parameter carefully.** My first attempt used an *entity*
+parameter matching the enclosing DataView's type, and the round-trip built clean —
+Mendix supplies a default argument when the context provides an object of that
+type, so the dropped binding is invisible. Only a parameter Mendix cannot default
+(here a `String`) exposes it. A regression test written the obvious way would pass
+against the bug.
+
+**Why it matters here.** This project's rule is that `mdlsource/*.mdl` is the
+source of truth and every file re-applies from scratch, so nothing depends on
+describe today. But `describe page` is the documented way to recover a page you did
+not author, and `/diff-script` compares a script against described state — both are
+wrong for a parameterized datasource, and wrong silently until mxbuild runs.
+
+**Related, and worth acting on separately:** TraceOps' 10 microflow datasources
+were all written *around* this bug. Each one re-derives its own context instead of
+taking it as a parameter:
+
+```sql
+create or modify microflow TraceOps.DS_SelectedGuardrailLinks ()
+begin
+  $Requirement = call microflow TraceOps.DS_SelectedRequirement();   -- extra call + query
+  retrieve $Links from TraceOps.GuardrailLink where ... = $Requirement;
+```
+
+With the write path fixed, `DataSource: microflow TraceOps.DS_LinksFor(Requirement: $currentObject)`
+builds clean (verified, 0 errors) and drops the redundant lookup. Not adopted yet —
+it touches 10 microflows and 4 pages.
+
+---
+
+## 38. `mxcli theme` is safe to run on this app, and a no-op on it
+
+**Severity:** none — an evaluation, not a defect
+**Phase:** 9 (nightly-247 re-test)
+
+`b1ce75be`/`d52fc0ec` ship three built-in themes (signal, ledger, console) with
+light/dark variants. TraceOps hand-rolled its dark theme in phase 1, so this is the
+one new feature that overlaps directly with work already done here. Tested on a
+throwaway copy, never on the real project.
+
+**It does not clobber anything.** `mxcli theme apply console` appended a fenced
+block to `main.scss` and left the existing three imports and `_traceops.scss`
+untouched. The fence claim holds too — editing inside the markers and re-applying
+refuses, and names both ways out:
+
+```
+theme/web/main.scss: the 'console' block has local edits, so it was left alone
+  keep them: move your lines outside the mxcli:theme markers
+  discard them: re-run with --force
+```
+
+**And it changes nothing visually.** With both themes active the app renders
+exactly as before — measured, not eyeballed:
+
+| | body background | body font |
+| --- | --- | --- |
+| TraceOps + console | `rgb(10, 13, 18)` | IBM Plex Sans |
+| console alone | `rgb(245, 247, 250)` | Space Grotesk |
+
+mxcli's block is imported *after* `_traceops.scss` and still loses, because the two
+work at different levels: mxcli's themes drive ~60 Atlas variables from `--mxt-*`
+tokens, while `_traceops.scss` sets literal values on elements directly. That is
+the same failure the theme commit diagnoses in its own default theme ("it had
+pinned `--font-color-default`, the pill tints and the neutral surface to literal
+colours"). TraceOps is 895 lines of exactly that.
+
+**The light/dark claim checks out.** Isolating the console theme (commenting out
+`@import "traceops"`) and flipping `prefers-color-scheme` with no reload and no
+class on `<html>`:
+
+| scheme | `--mxt-ground` | body bg | body text |
+| --- | --- | --- | --- |
+| light | `#f5f7fa` | `rgb(245, 247, 250)` | `rgb(16, 21, 28)` |
+| dark | `#0e1116` | `rgb(14, 17, 22)` | `rgb(230, 237, 243)` |
+
+Page ground, rows and text all followed. The commit's claim that the earlier
+"Atlas widgets are light-only" finding was wrong for Mendix 11 holds up here.
+
+**Conclusion for this project: don't adopt it.** Not because it is broken, but
+because `_traceops.scss` is not only a palette — it carries the layout (the grid,
+the panels, the status strip, the tree rows). With it disabled the mxcli theme
+colours the page correctly and the layout collapses to a plain stack. Switching
+would mean re-expressing TraceOps' identity as `--mxt-*` tokens plus a layout
+partial. Worth doing if this app were starting today; not worth doing now.
